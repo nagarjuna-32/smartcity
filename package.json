@@ -1,0 +1,20 @@
+{
+  "name": "tumakuru-smart-city",
+  "version": "1.0.0",
+  "description": "TUMAKURU SMART CITY – Intelligent District Planning & Facility Mapping System",
+  "scripts": {
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "seed": "cd server && npm run seed"
+  },
+  "keywords": [
+    "tumakuru",
+    "smart-city",
+    "gis",
+    "spatial-planning",
+    "facility-mapping",
+    "karnataka"
+  ],
+  "author": "",
+  "license": "MIT"
+}
