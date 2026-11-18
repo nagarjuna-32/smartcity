@@ -115,7 +115,7 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
-            WELCOME TO TUMKUR
+            WELCOME TO TUMKUR <span className="text-brand-cyan">SMART CITY</span>
           </h1>
 
           <p className="text-lg sm:text-xl font-medium text-slate-300 mt-2">
