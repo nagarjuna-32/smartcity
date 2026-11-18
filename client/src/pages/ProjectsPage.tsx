@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { ProposedProject, Taluk, Area } from '../types';
+import { ProposedProject, Area } from '../types';
 import {
   Lightbulb,
   Plus,
   Filter,
   CheckCircle2,
-  Clock,
   Coins,
   Users,
   MapPin,
@@ -16,21 +15,19 @@ import {
   X,
   AlertCircle,
   Building2,
-  Layers,
   ChevronRight
 } from 'lucide-react';
 
 export const ProjectsPage: React.FC = () => {
   const { user, isPlanner, isAdmin } = useAuth();
   const [projects, setProjects] = useState<ProposedProject[]>([]);
-  const [taluks, setTaluks] = useState<Taluk[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [priorityFilter, setPriorityFilter] = useState<string>('All');
-  const [talukFilter, setTalukFilter] = useState<string>('All');
+  const [areaFilter, setAreaFilter] = useState<string>('All');
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,15 +37,14 @@ export const ProjectsPage: React.FC = () => {
   // New Project Form State
   const [formData, setFormData] = useState({
     title: '',
-    category: 'Healthcare' as ProposedProject['category'],
-    taluk_id: '',
+    category: 'Hospitals & Healthcare' as ProposedProject['category'],
     area_id: '',
-    latitude: 13.3379,
-    longitude: 77.1010,
+    latitude: 13.3400,
+    longitude: 77.1000,
     priority: 'High' as ProposedProject['priority'],
-    estimated_budget_lakhs: 50,
+    estimated_budget_lakhs: 75,
     target_completion_year: 2027,
-    expected_beneficiaries: 15000,
+    expected_beneficiaries: 18000,
     rationale: ''
   });
 
@@ -59,24 +55,22 @@ export const ProjectsPage: React.FC = () => {
   const loadProjectsAndMeta = async () => {
     try {
       setLoading(true);
-      const [projRes, taluksRes, areasRes] = await Promise.all([
+      const [projRes, areasRes] = await Promise.all([
         api.getProposedProjects(),
-        api.getTaluks(),
         api.getAreas()
       ]);
       setProjects(projRes.projects);
-      setTaluks(taluksRes.taluks);
       setAreas(areasRes.areas);
-      if (taluksRes.taluks.length > 0 && !formData.taluk_id) {
+      if (areasRes.areas.length > 0 && !formData.area_id) {
         setFormData(prev => ({
           ...prev,
-          taluk_id: taluksRes.taluks[0].id,
-          latitude: taluksRes.taluks[0].latitude,
-          longitude: taluksRes.taluks[0].longitude
+          area_id: areasRes.areas[0].id,
+          latitude: areasRes.areas[0].latitude,
+          longitude: areasRes.areas[0].longitude
         }));
       }
     } catch (err) {
-      console.error('Failed to load projects', err);
+      console.error('Failed to load projects:', err);
     } finally {
       setLoading(false);
     }
@@ -101,15 +95,14 @@ export const ProjectsPage: React.FC = () => {
     }
   };
 
-  const handleTalukSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const tId = e.target.value;
-    const selectedTaluk = taluks.find(t => t.id === tId);
+  const handleAreaSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const aId = e.target.value;
+    const selectedArea = areas.find(a => a.id === aId);
     setFormData(prev => ({
       ...prev,
-      taluk_id: tId,
-      area_id: '',
-      latitude: selectedTaluk ? selectedTaluk.latitude : prev.latitude,
-      longitude: selectedTaluk ? selectedTaluk.longitude : prev.longitude
+      area_id: aId,
+      latitude: selectedArea ? selectedArea.latitude : prev.latitude,
+      longitude: selectedArea ? selectedArea.longitude : prev.longitude
     }));
   };
 
@@ -127,13 +120,12 @@ export const ProjectsPage: React.FC = () => {
       const res = await api.createProposedProject(formData);
       setProjects(prev => [res.project, ...prev]);
       setIsModalOpen(false);
-      // Reset form
       setFormData(prev => ({
         ...prev,
         title: '',
         rationale: '',
-        estimated_budget_lakhs: 50,
-        expected_beneficiaries: 15000
+        estimated_budget_lakhs: 75,
+        expected_beneficiaries: 18000
       }));
     } catch (err: any) {
       setModalError(err.message || 'Failed to create proposed project');
@@ -146,106 +138,89 @@ export const ProjectsPage: React.FC = () => {
   const filteredProjects = projects.filter(p => {
     if (statusFilter !== 'All' && p.status !== statusFilter) return false;
     if (priorityFilter !== 'All' && p.priority !== priorityFilter) return false;
-    if (talukFilter !== 'All' && p.taluk_id !== talukFilter) return false;
+    if (areaFilter !== 'All' && p.area_id !== areaFilter) return false;
     return true;
   });
 
-  // Aggregations
   const totalBudgetLakhs = projects.reduce((sum, p) => sum + (p.estimated_budget_lakhs || 0), 0);
   const totalBeneficiaries = projects.reduce((sum, p) => sum + (p.expected_beneficiaries || 0), 0);
   const approvedCount = projects.filter(p => p.status === 'Approved' || p.status === 'Funded').length;
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-navy-900 border border-navy-800 rounded-2xl p-6 shadow-sm">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="bg-navy-900 border border-navy-800 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-brand-cyan text-sm font-semibold mb-1">
+          <div className="flex items-center gap-2 text-brand-cyan text-xs font-bold uppercase tracking-wider mb-1">
             <Lightbulb className="w-4 h-4" />
-            <span>CAPITAL WORKS & URBAN DEVELOPMENT PIPELINE</span>
+            <span>MUNICIPAL INFRASTRUCTURE PIPELINE</span>
           </div>
-          <h1 className="text-2xl lg:text-3xl font-extrabold text-white">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
             Proposed Development Projects
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Track planned civic initiatives, hospital upgrades, school expansions, and industrial corridors.
+          <p className="text-slate-400 text-xs sm:text-sm mt-1">
+            Track planned civic works, hospital upgrades, school expansions, and public utility investments across Tumkur City.
           </p>
         </div>
 
-        <div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-teal to-brand-cyan text-white text-sm font-semibold shadow hover:opacity-95 transition-opacity"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Propose Capital Project</span>
-          </button>
-        </div>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-brand-teal to-brand-cyan text-white text-xs font-bold shadow-md shadow-brand-teal/25 flex items-center gap-2 self-start md:self-center hover:opacity-95 transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Propose Capital Project</span>
+        </button>
       </div>
 
-      {/* Metric Cards */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-navy-900 border border-navy-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>TOTAL PROPOSALS</span>
-            <Lightbulb className="w-4 h-4 text-brand-cyan" />
-          </div>
+          <span className="text-slate-400 text-xs font-semibold block mb-1">PROPOSED INITIATIVES</span>
           <div className="text-2xl font-black text-white">{projects.length}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Across 10 taluks</p>
+          <p className="text-[11px] text-slate-400 mt-1">Across Tumkur city areas</p>
         </div>
 
         <div className="bg-navy-900 border border-navy-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>ESTIMATED OUTLAY</span>
-            <Coins className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-2xl font-black text-white">
+          <span className="text-slate-400 text-xs font-semibold block mb-1">ESTIMATED OUTLAY</span>
+          <div className="text-2xl font-black text-amber-400">
             ₹{(totalBudgetLakhs / 100).toFixed(2)} Cr
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {totalBudgetLakhs.toLocaleString()} Lakhs proposed
-          </p>
+          <p className="text-[11px] text-slate-400 mt-1">{totalBudgetLakhs.toLocaleString()} Lakhs proposed</p>
         </div>
 
         <div className="bg-navy-900 border border-navy-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>PROJECTED BENEFICIARIES</span>
-            <Users className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-black text-white">
+          <span className="text-slate-400 text-xs font-semibold block mb-1">PROJECTED BENEFICIARIES</span>
+          <div className="text-2xl font-black text-emerald-400">
             {(totalBeneficiaries / 1000).toFixed(1)}k
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Direct citizen impact</p>
+          <p className="text-[11px] text-slate-400 mt-1">Tumkur citizens impacted</p>
         </div>
 
         <div className="bg-navy-900 border border-navy-800 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>APPROVED / FUNDED</span>
-            <CheckCircle2 className="w-4 h-4 text-brand-teal" />
-          </div>
-          <div className="text-2xl font-black text-white">{approvedCount}</div>
+          <span className="text-slate-400 text-xs font-semibold block mb-1">APPROVED / FUNDED</span>
+          <div className="text-2xl font-black text-brand-cyan">{approvedCount}</div>
           <p className="text-[11px] text-slate-400 mt-1">
-            {projects.length > 0 ? Math.round((approvedCount / projects.length) * 100) : 0}% pipeline conversion
+            {projects.length > 0 ? Math.round((approvedCount / projects.length) * 100) : 0}% pipeline progress
           </p>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="bg-navy-900 border border-navy-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-4 text-xs">
-        <div className="flex items-center gap-2 text-slate-300 font-semibold">
+      {/* Filters Bar */}
+      <div className="bg-navy-900 border border-navy-800 rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-3 text-xs">
+        <div className="flex items-center gap-2 text-slate-300 font-bold">
           <Filter className="w-4 h-4 text-brand-cyan" />
-          <span>Filter By:</span>
+          <span>Filter:</span>
         </div>
 
-        {/* Taluk */}
+        {/* Area */}
         <select
-          value={talukFilter}
-          onChange={(e) => setTalukFilter(e.target.value)}
+          value={areaFilter}
+          onChange={(e) => setAreaFilter(e.target.value)}
           className="bg-navy-800 border border-navy-700 text-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-teal"
         >
-          <option value="All">All Taluks</option>
-          {taluks.map(t => (
-            <option key={t.id} value={t.id}>{t.name}</option>
+          <option value="All">All Tumkur Areas</option>
+          {areas.map(a => (
+            <option key={a.id} value={a.id}>{a.name}</option>
           ))}
         </select>
 
@@ -280,112 +255,88 @@ export const ProjectsPage: React.FC = () => {
       </div>
 
       {/* Projects Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredProjects.map((project) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {filteredProjects.map((p) => (
           <div
-            key={project.id}
-            className="bg-navy-900 border border-navy-800 hover:border-navy-700 rounded-2xl p-5 shadow-sm transition-all flex flex-col justify-between"
+            key={p.id}
+            className="bg-navy-900 border border-navy-800 hover:border-brand-teal rounded-3xl p-5 shadow-sm transition-all flex flex-col justify-between"
           >
             <div>
-              {/* Category, Priority & Status badges */}
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-navy-800 border border-navy-700 text-slate-300">
-                  {project.category}
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-navy-800 text-brand-cyan">
+                  {p.category}
                 </span>
 
                 <div className="flex items-center gap-1.5">
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      project.priority === 'High'
-                        ? 'bg-rose-500/20 text-rose-400'
-                        : project.priority === 'Medium'
-                        ? 'bg-amber-500/20 text-amber-400'
-                        : 'bg-blue-500/20 text-blue-400'
-                    }`}
-                  >
-                    {project.priority}
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    p.priority === 'High' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    {p.priority}
                   </span>
 
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      project.status === 'Funded'
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : project.status === 'Approved'
-                        ? 'bg-teal-500/20 text-brand-cyan'
-                        : project.status === 'Under Review'
-                        ? 'bg-amber-500/20 text-amber-400'
-                        : 'bg-slate-700 text-slate-300'
-                    }`}
-                  >
-                    {project.status}
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    p.status === 'Funded'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : p.status === 'Approved'
+                      ? 'bg-teal-500/20 text-brand-cyan'
+                      : 'bg-navy-800 text-slate-400'
+                  }`}>
+                    {p.status}
                   </span>
                 </div>
               </div>
 
-              {/* Title & Location */}
-              <h3 className="text-base font-bold text-white mb-1.5 leading-snug">
-                {project.title}
-              </h3>
+              <h3 className="text-base font-extrabold text-white leading-snug mb-1.5">{p.title}</h3>
 
               <div className="flex items-center gap-1.5 text-xs text-brand-cyan mb-3">
                 <MapPin className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  {project.taluk_name ? `${project.taluk_name} Taluk` : 'Tumakuru'}
-                  {project.area_name ? ` • ${project.area_name}` : ''}
-                </span>
+                <span>{p.area_name ? `${p.area_name}, Tumkur` : 'Tumkur City'}</span>
               </div>
 
-              {/* Rationale */}
-              <p className="text-xs text-slate-300 leading-relaxed mb-4 line-clamp-3">
-                {project.rationale}
+              <p className="text-xs text-slate-300 leading-relaxed line-clamp-3 mb-4">
+                {p.rationale}
               </p>
 
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-2 bg-navy-800/60 rounded-xl p-3 mb-4 text-xs">
+              <div className="grid grid-cols-2 gap-2 bg-navy-800/60 rounded-2xl p-3 text-xs mb-3">
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">BUDGET ESTIMATE</span>
+                  <span className="text-[10px] text-slate-400 block font-semibold">BUDGET ESTIMATE</span>
                   <span className="font-bold text-amber-300 font-mono">
-                    ₹{project.estimated_budget_lakhs?.toLocaleString() || 'N/A'} Lakhs
+                    ₹{p.estimated_budget_lakhs ? `${p.estimated_budget_lakhs} Lakhs` : 'TBD'}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">BENEFICIARIES</span>
+                  <span className="text-[10px] text-slate-400 block font-semibold">BENEFICIARIES</span>
                   <span className="font-bold text-emerald-300 font-mono">
-                    {project.expected_beneficiaries?.toLocaleString() || 'N/A'} Citizens
+                    {p.expected_beneficiaries ? `${p.expected_beneficiaries.toLocaleString()}` : 'N/A'}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">TARGET YEAR</span>
-                  <span className="font-semibold text-slate-200 font-mono">
-                    {project.target_completion_year || 'Ongoing'}
-                  </span>
+                  <span className="text-[10px] text-slate-400 block font-semibold">TARGET YEAR</span>
+                  <span className="font-semibold text-slate-200 font-mono">{p.target_completion_year || 'Ongoing'}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-medium">PROPOSED BY</span>
-                  <span className="font-semibold text-slate-300 truncate block">
-                    {project.proposed_by_name || 'Urban Planning Dept'}
-                  </span>
+                  <span className="text-[10px] text-slate-400 block font-semibold">PROPOSED BY</span>
+                  <span className="font-semibold text-slate-300 truncate block">{p.proposed_by_name || 'Planning Cell'}</span>
                 </div>
               </div>
             </div>
 
-            {/* Bottom Actions */}
             <div className="pt-3 border-t border-navy-800 flex items-center justify-between text-xs">
               <a
-                href={`https://www.openstreetmap.org/directions?to=${project.latitude},${project.longitude}`}
+                href={`https://www.openstreetmap.org/directions?to=${p.latitude},${p.longitude}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-400 hover:text-white flex items-center gap-1"
+                className="text-slate-400 hover:text-white flex items-center gap-1 font-semibold"
               >
-                <span>View on Map</span>
+                <span>View Map</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
 
-              {(isPlanner || isAdmin) ? (
+              {(isPlanner || isAdmin) && (
                 <div className="flex items-center gap-2">
                   <select
-                    value={project.status}
-                    onChange={(e) => handleStatusChange(project.id, e.target.value as ProposedProject['status'])}
+                    value={p.status}
+                    onChange={(e) => handleStatusChange(p.id, e.target.value as ProposedProject['status'])}
                     className="bg-navy-800 border border-navy-700 text-slate-200 text-[11px] rounded-lg px-2 py-1 focus:outline-none"
                   >
                     <option value="Proposed">Proposed</option>
@@ -395,55 +346,35 @@ export const ProjectsPage: React.FC = () => {
                   </select>
 
                   <button
-                    onClick={() => handleDelete(project.id)}
+                    onClick={() => handleDelete(p.id)}
                     className="p-1 text-slate-500 hover:text-rose-400 transition-colors"
                     title="Delete proposal"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              ) : (
-                <span className="text-[11px] text-slate-500 font-mono">
-                  Lat: {project.latitude.toFixed(3)}, Lng: {project.longitude.toFixed(3)}
-                </span>
               )}
             </div>
           </div>
         ))}
       </div>
 
-      {filteredProjects.length === 0 && !loading && (
-        <div className="bg-navy-900 border border-navy-800 rounded-2xl p-12 text-center text-slate-400">
-          <Lightbulb className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-lg font-bold text-white mb-1">No Projects Found</h3>
-          <p className="text-sm">Try relaxing your filter criteria or submit a new capital project proposal.</p>
-        </div>
-      )}
-
-      {/* Propose Project Modal */}
+      {/* Propose Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-          <div className="bg-navy-900 border border-navy-700 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-navy-800 mb-5">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-brand-teal/20 text-brand-cyan flex items-center justify-center">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Propose Capital Development Project</h3>
-                  <p className="text-xs text-slate-400">Submit a new municipal infrastructure project for planning review</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
+          <div className="bg-navy-900 border border-navy-700 rounded-3xl max-w-xl w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-4 border-b border-navy-800 mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-brand-cyan" />
+                <span>Submit Infrastructure Project Proposal</span>
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {modalError && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+              <div className="mb-4 p-3 rounded-xl bg-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{modalError}</span>
               </div>
@@ -451,173 +382,90 @@ export const ProjectsPage: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  Project Title *
-                </label>
+                <label className="block text-slate-300 font-semibold mb-1">Project Title *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Pavagada Solar Grid Expansion & Drinking Water Pipeline"
+                  placeholder="e.g. Mandipet Modern Multi-Level Vegetable Market & Cold Storage"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
+                  className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal"
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Category *
-                  </label>
+                  <label className="block text-slate-300 font-semibold mb-1">Category *</label>
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
+                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal"
                   >
-                    <option value="Healthcare">Healthcare</option>
-                    <option value="Education">Education</option>
+                    <option value="Hospitals & Healthcare">Hospitals & Healthcare</option>
+                    <option value="Schools & Education">Schools & Education</option>
+                    <option value="Parks & Greenery">Parks & Greenery</option>
                     <option value="Roads & Infrastructure">Roads & Infrastructure</option>
-                    <option value="Residential Layout">Residential Layout</option>
+                    <option value="Essential Markets & Stores">Essential Markets & Stores</option>
                     <option value="Public Service">Public Service</option>
-                    <option value="Water & Greenery">Water & Greenery</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Priority Level *
-                  </label>
+                  <label className="block text-slate-300 font-semibold mb-1">Target Area *</label>
                   <select
-                    value={formData.priority}
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
+                    value={formData.area_id}
+                    onChange={handleAreaSelectChange}
+                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal"
                   >
-                    <option value="High">High Priority</option>
-                    <option value="Medium">Medium Priority</option>
-                    <option value="Low">Low Priority</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Taluk *
-                  </label>
-                  <select
-                    value={formData.taluk_id}
-                    onChange={handleTalukSelectChange}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
-                  >
-                    {taluks.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} Taluk
-                      </option>
+                    {areas.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Area / Locality (Optional)
-                  </label>
-                  <select
-                    value={formData.area_id}
-                    onChange={(e) => setFormData({ ...formData, area_id: e.target.value })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
-                  >
-                    <option value="">-- General Taluk Wide --</option>
-                    {areas
-                      .filter(a => !formData.taluk_id || a.taluk_id === formData.taluk_id)
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name} ({a.category})
-                        </option>
-                      ))}
-                  </select>
-                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Estimated Budget (₹ Lakhs)
-                  </label>
+                  <label className="block text-slate-300 font-semibold mb-1">Budget (₹ Lakhs)</label>
                   <input
                     type="number"
-                    min="1"
                     value={formData.estimated_budget_lakhs}
                     onChange={(e) => setFormData({ ...formData, estimated_budget_lakhs: Number(e.target.value) })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm font-mono"
+                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm font-mono focus:outline-none"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Target Year
-                  </label>
-                  <input
-                    type="number"
-                    min="2026"
-                    max="2035"
-                    value={formData.target_completion_year}
-                    onChange={(e) => setFormData({ ...formData, target_completion_year: Number(e.target.value) })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm font-mono"
-                  />
+                  <label className="block text-slate-300 font-semibold mb-1">Priority</label>
+                  <select
+                    value={formData.priority}
+                    onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
+                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
                 </div>
-
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Beneficiaries (Citizens)
-                  </label>
+                  <label className="block text-slate-300 font-semibold mb-1">Beneficiaries</label>
                   <input
                     type="number"
-                    min="100"
                     value={formData.expected_beneficiaries}
                     onChange={(e) => setFormData({ ...formData, expected_beneficiaries: Number(e.target.value) })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Latitude
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={formData.latitude}
-                    onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    Longitude
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={formData.longitude}
-                    onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) })}
-                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm font-mono"
+                    className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm font-mono focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  Rationale & Justification *
-                </label>
+                <label className="block text-slate-300 font-semibold mb-1">Rationale & Urban Justification *</label>
                 <textarea
                   rows={3}
                   required
-                  placeholder="Detail the community need, deficit addressed, and expected socio-economic returns..."
+                  placeholder="Detail the neighborhood service gap addressed by this proposed infrastructure..."
                   value={formData.rationale}
                   onChange={(e) => setFormData({ ...formData, rationale: e.target.value })}
-                  className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
+                  className="w-full bg-navy-800 border border-navy-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal"
                 />
               </div>
 
@@ -632,7 +480,7 @@ export const ProjectsPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-brand-teal to-brand-cyan text-white font-semibold shadow hover:opacity-95 disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-brand-teal to-brand-cyan text-white font-bold shadow hover:opacity-95 disabled:opacity-50"
                 >
                   {submitting ? 'Submitting...' : 'Submit Proposal'}
                 </button>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, MapPin, Building2, School, HeartPulse, Mail, Home, ArrowRight, Loader2 } from 'lucide-react';
+import { Search, X, MapPin, School, HeartPulse, ShoppingBasket, Pill, Mail, Home, ArrowRight, Loader2, Building2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { SearchResult } from '../../types';
 
@@ -53,15 +53,16 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
     navigate(url);
   };
 
-  const getResultIcon = (type: string) => {
-    const t = type.toLowerCase();
-    if (t.includes('taluk')) return <Building2 className="w-4 h-4 text-brand-teal" />;
-    if (t.includes('area') || t.includes('village')) return <MapPin className="w-4 h-4 text-emerald-500" />;
-    if (t.includes('school') || t.includes('college')) return <School className="w-4 h-4 text-blue-500" />;
-    if (t.includes('hospital') || t.includes('health')) return <HeartPulse className="w-4 h-4 text-red-500" />;
-    if (t.includes('post')) return <Mail className="w-4 h-4 text-amber-500" />;
-    if (t.includes('layout') || t.includes('site')) return <Home className="w-4 h-4 text-purple-500" />;
-    return <MapPin className="w-4 h-4 text-slate-500" />;
+  const getResultIcon = (r: SearchResult) => {
+    if (r.type === 'area') return <MapPin className="w-4 h-4 text-brand-cyan" />;
+    const cat = (r.category_id || r.category || '').toLowerCase();
+    if (cat.includes('school') || cat.includes('education')) return <School className="w-4 h-4 text-blue-500" />;
+    if (cat.includes('hospital') || cat.includes('health')) return <HeartPulse className="w-4 h-4 text-red-500" />;
+    if (cat.includes('provision') || cat.includes('grocery')) return <ShoppingBasket className="w-4 h-4 text-amber-500" />;
+    if (cat.includes('medical') || cat.includes('pharma')) return <Pill className="w-4 h-4 text-emerald-500" />;
+    if (cat.includes('post')) return <Mail className="w-4 h-4 text-orange-500" />;
+    if (cat.includes('layout') || cat.includes('site') || cat.includes('land')) return <Home className="w-4 h-4 text-purple-500" />;
+    return <Building2 className="w-4 h-4 text-slate-500" />;
   };
 
   return (
@@ -77,7 +78,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
             ref={inputRef}
             type="text"
             className="w-full bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none"
-            placeholder="Search Tumakuru, taluks, villages, schools, hospitals, post offices, layouts..."
+            placeholder="Search Tumkur localities (SS Puram, Batawadi), hospitals, schools, pharmacies, shops..."
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => {
@@ -109,7 +110,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
               >
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
-                    {getResultIcon(r.type)}
+                    {getResultIcon(r)}
                   </div>
                   <div>
                     <h5 className="font-semibold text-slate-900 text-sm group-hover:text-brand-teal transition-colors">
@@ -130,13 +131,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
             <div className="text-center py-12 text-slate-400">
               <MapPin className="w-10 h-10 mx-auto mb-2 text-slate-300 stroke-1" />
               <p className="text-sm font-medium">No results found for "{query}"</p>
-              <p className="text-xs text-slate-400 mt-1">Try searching for SIT, Tiptur, Gubbi, Batawadi, or District Hospital.</p>
+              <p className="text-xs text-slate-400 mt-1">Try searching for SS Puram, SIT, Batawadi, Mandipet, Apollo, or District Hospital.</p>
             </div>
           ) : (
             <div className="py-8 px-4 text-xs text-slate-500">
               <span className="font-bold text-slate-700 block mb-3 uppercase tracking-wider text-[11px]">Quick Suggestions</span>
               <div className="flex flex-wrap gap-2">
-                {['Tumakuru Taluk', 'Tiptur', 'Siddaganga Institute', 'District Hospital', 'Pavagada Solar Park', 'Gubbi HAL Complex', 'Batawadi', 'TUDA Kyathsandra Layout'].map(tag => (
+                {['SS Puram', 'Batawadi', 'SIT Extension', 'District Hospital', 'Apollo Pharmacy', 'More Supermarket', 'Mandipet', 'TUDA Layout'].map(tag => (
                   <button
                     key={tag}
                     onClick={() => setQuery(tag)}
@@ -152,7 +153,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
 
         {/* Modal Footer */}
         <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Global GIS spatial search across 10 taluks and 40+ settlements</span>
+          <span>Area-wise spatial search across Tumkur City localities & facilities</span>
           <span className="font-mono">OpenStreetMap & Verified Municipal Data</span>
         </div>
       </div>

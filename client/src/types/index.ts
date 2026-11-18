@@ -7,63 +7,27 @@ export interface User {
   created_at?: string;
 }
 
-export interface District {
-  id: string;
-  name: string;
-  state: string;
-  country: string;
-  latitude: number;
-  longitude: number;
-  total_area_sq_km: number;
-  population: number;
-  boundary_geojson?: string;
-  description: string;
-}
-
-export interface SurroundingDistrict {
-  id: string;
-  name: string;
-  state: string;
-  direction: string;
-  latitude: number;
-  longitude: number;
-  distance_km: number;
-  description: string;
-}
-
-export interface Taluk {
-  id: string;
-  district_id: string;
-  name: string;
-  headquarters: string;
-  latitude: number;
-  longitude: number;
-  area_sq_km: number;
-  population: number;
-  total_villages: number;
-  total_areas: number;
-  description: string;
-  areas_count?: number;
-  facilities_count?: number;
-  schools_count?: number;
-  hospitals_count?: number;
-  post_offices_count?: number;
-  layouts_count?: number;
-  sites_count?: number;
-}
-
 export interface Area {
   id: string;
-  taluk_id: string;
-  taluk_name?: string;
   name: string;
-  category: 'City / Urban' | 'Town' | 'Village' | 'Industrial Zone' | 'Educational Hub' | 'Suburban';
+  description?: string;
   latitude: number;
   longitude: number;
   population?: number;
   pin_code?: string;
   infrastructure_summary?: string;
+  boundary_geojson?: string;
   facilities_count?: number;
+  schools_count?: number;
+  hospitals_count?: number;
+  provision_stores_count?: number;
+  medical_stores_count?: number;
+  post_offices_count?: number;
+  layouts_count?: number;
+  sites_count?: number;
+  other_count?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface FacilityCategory {
@@ -77,14 +41,12 @@ export interface FacilityCategory {
 
 export interface Facility {
   id: string;
+  area_id?: string;
+  area_name?: string;
   category_id: string;
   category_name?: string;
   category_color?: string;
   category_icon?: string;
-  taluk_id: string;
-  taluk_name?: string;
-  area_id?: string;
-  area_name?: string;
   name: string;
   sub_type: string;
   address: string;
@@ -92,27 +54,31 @@ export interface Facility {
   contact_phone?: string;
   contact_email?: string;
   website?: string;
+  opening_hours?: string;
   latitude: number;
   longitude: number;
   operational_status: 'Operational' | 'Under Construction' | 'Proposed' | 'Temporarily Closed' | 'Unknown / Unverified';
   verification_status: 'Officially Verified' | 'Admin Verified' | 'Community Reported' | 'OpenStreetMap Listed' | 'Unverified';
-  data_origin: 'Real Source Data' | 'Admin Verified Data' | 'Community Reported Data' | 'Demo Data';
+  data_origin: 'Real Source Data' | 'Admin Verified Data' | 'Community Reported Data' | 'OpenStreetMap Ingested' | 'Demo Data';
   source_name: string;
   source_url?: string;
   last_verified_at?: string;
   verification_notes?: string;
   details?: Record<string, any>;
+  details_json?: string;
   distance_km?: number;
+  distance_meters?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ProposedProject {
   id: string;
-  title: string;
-  category: 'Healthcare' | 'Education' | 'Roads & Infrastructure' | 'Residential Layout' | 'Public Service' | 'Water & Greenery';
-  taluk_id: string;
-  taluk_name?: string;
   area_id?: string;
   area_name?: string;
+  title: string;
+  category: 'Hospitals & Healthcare' | 'Schools & Education' | 'Parks & Greenery' | 'Roads & Infrastructure' | 'Public Service' | 'Essential Markets & Stores' | 'Residential Layout';
+  sub_type?: string;
   latitude: number;
   longitude: number;
   priority: 'High' | 'Medium' | 'Low';
@@ -127,8 +93,8 @@ export interface ProposedProject {
 
 export interface InfrastructureGap {
   id: string;
-  taluk_id: string;
-  taluk_name: string;
+  area_id: string;
+  area_name: string;
   category: string;
   title: string;
   severity: 'High' | 'Medium' | 'Low';
@@ -142,9 +108,23 @@ export interface SearchResult {
   id: string;
   title: string;
   subtitle: string;
-  type: string;
+  type: 'area' | 'facility';
   category: string;
+  category_id?: string;
+  category_color?: string;
+  category_icon?: string;
   latitude: number;
   longitude: number;
+  distance_km?: number;
   url: string;
+}
+
+export interface SavedLocation {
+  id: number;
+  user_id: number;
+  item_type: 'area' | 'facility';
+  item_id: string;
+  notes?: string;
+  created_at: string;
+  data?: Area | Facility;
 }

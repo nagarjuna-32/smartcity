@@ -8,13 +8,12 @@ import { initSchema } from './database/db.js';
 import { seedDatabase } from './database/seed.js';
 
 import authRoutes from './routes/auth.js';
-import districtRoutes from './routes/districts.js';
-import talukRoutes from './routes/taluks.js';
 import areaRoutes from './routes/areas.js';
 import facilityRoutes from './routes/facilities.js';
 import planningRoutes from './routes/planning.js';
 import searchRoutes from './routes/search.js';
 import adminRoutes from './routes/admin.js';
+import savedRoutes from './routes/saved.js';
 
 dotenv.config();
 
@@ -49,23 +48,23 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Routes Mount
+// API Routes Mount - Pure Area-Based Architecture
 app.use('/api/auth', authRoutes);
-app.use('/api/districts', districtRoutes);
-app.use('/api/taluks', talukRoutes);
 app.use('/api/areas', areaRoutes);
 app.use('/api/facilities', facilityRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/saved', savedRoutes);
 
 // System Health Check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
-    system: 'Tumakuru Smart City Planning & Facility Mapping System',
+    system: 'Tumkur Smart City - Area-Wise Infrastructure & Urban Planning Platform',
+    scope: 'Tumkur City Localities & Neighborhoods',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '2.0.0'
   });
 });
 
@@ -86,8 +85,8 @@ app.get('*', (req, res, next) => {
 // Start Express Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`================================================================`);
-  console.log(`🏙️  TUMAKURU SMART CITY - Geographic Intelligence & Planning System`);
+  console.log(`🏙️  TUMKUR SMART CITY - Area-Wise Infrastructure & Planning Platform`);
   console.log(`⚡  API Server running on http://127.0.0.1:${PORT}`);
-  console.log(`📍  District: Tumakuru, Karnataka, India`);
+  console.log(`📍  City Focus: Tumkur City, Karnataka, India`);
   console.log(`================================================================`);
 });

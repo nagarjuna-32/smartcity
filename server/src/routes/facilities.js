@@ -1,131 +1,140 @@
 import express from 'express';
 import db, { haversineDistance } from '../database/db.js';
-import { adminMiddleware } from '../middleware/auth.js';
+import { authMiddleware, adminMiddleware, plannerOrAdminMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// List categories
+// 1. Get All 8 Facility Categories with Dynamic Counts
 router.get('/categories', (req, res) => {
   try {
     const categories = db.prepare(`
-      SELECT fc.*,
+      SELECT 
+        fc.*,
         (SELECT COUNT(*) FROM facilities f WHERE f.category_id = fc.id) as count
       FROM facility_categories fc
       ORDER BY fc.name ASC
     `).all();
+
     return res.json({ categories });
   } catch (err) {
+    console.error('Categories error:', err);
     return res.status(500).json({ error: 'Failed to retrieve categories.' });
   }
 });
 
-// List facilities with multi-criteria filtering & spatial proximity
+// 2. Get Facilities with Multi-Category, Area, Radius, and Distance Sorting
 router.get('/', (req, res) => {
   try {
     const {
-      category_id,
-      taluk_id,
       area_id,
-      operational_status,
-      verification_status,
-      data_origin,
+      category_id,
+      categories,
       search,
-      user_lat,
-      user_lng,
+      lat,
+      lng,
       radius_km,
+      verified_only,
+      operational_status,
+      sort,
       limit = 100,
       offset = 0
     } = req.query;
 
     let query = `
-      SELECT f.*,
-        fc.name as category_name, fc.color as category_color, fc.icon as category_icon,
-        t.name as taluk_name,
-        a.name as area_name
+      SELECT 
+        f.*,
+        fc.name AS category_name,
+        fc.color AS category_color,
+        fc.icon AS category_icon,
+        a.name AS area_name
       FROM facilities f
       JOIN facility_categories fc ON f.category_id = fc.id
-      LEFT JOIN taluks t ON f.taluk_id = t.id
       LEFT JOIN areas a ON f.area_id = a.id
       WHERE 1=1
     `;
     const params = [];
 
-    if (category_id && category_id !== 'all') {
-      query += ' AND f.category_id = ?';
-      params.push(category_id);
-    }
-
-    if (taluk_id && taluk_id !== 'all') {
-      query += ' AND f.taluk_id = ?';
-      params.push(taluk_id.toLowerCase());
-    }
-
+    // Filter by single area
     if (area_id && area_id !== 'all') {
       query += ' AND f.area_id = ?';
-      params.push(area_id);
+      params.push(area_id.toLowerCase());
     }
 
+    // Filter by single or multiple categories
+    if (categories) {
+      const catList = categories.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+      if (catList.length > 0) {
+        const placeholders = catList.map(() => '?').join(',');
+        query += ` AND f.category_id IN (${placeholders})`;
+        params.push(...catList);
+      }
+    } else if (category_id && category_id !== 'all') {
+      query += ' AND f.category_id = ?';
+      params.push(category_id.toLowerCase());
+    }
+
+    // Filter by verification status
+    if (verified_only === 'true') {
+      query += ` AND f.verification_status IN ('Officially Verified', 'Admin Verified')`;
+    }
+
+    // Filter by operational status
     if (operational_status && operational_status !== 'all') {
       query += ' AND f.operational_status = ?';
       params.push(operational_status);
     }
 
-    if (verification_status && verification_status !== 'all') {
-      query += ' AND f.verification_status = ?';
-      params.push(verification_status);
-    }
-
-    if (data_origin && data_origin !== 'all') {
-      query += ' AND f.data_origin = ?';
-      params.push(data_origin);
-    }
-
+    // Filter by search query
     if (search && search.trim()) {
-      const s = `%${search.trim()}%`;
-      query += ' AND (f.name LIKE ? OR f.sub_type LIKE ? OR f.address LIKE ? OR f.pin_code LIKE ?)';
-      params.push(s, s, s, s);
+      query += ' AND (f.name LIKE ? OR f.address LIKE ? OR f.sub_type LIKE ? OR a.name LIKE ?)';
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term, term);
     }
 
-    query += ' ORDER BY f.name ASC';
+    let rows = db.prepare(query).all(...params);
 
-    let facilities = db.prepare(query).all(...params);
+    // Calculate distance if lat/lng are provided
+    const userLat = lat != null ? parseFloat(lat) : null;
+    const userLng = lng != null ? parseFloat(lng) : null;
 
-    // Compute Haversine distance if user coordinates provided
-    const uLat = parseFloat(user_lat);
-    const uLng = parseFloat(user_lng);
-    const maxRadius = radius_km ? parseFloat(radius_km) : null;
-
-    if (!isNaN(uLat) && !isNaN(uLng)) {
-      facilities = facilities.map(f => {
-        const distance = haversineDistance(uLat, uLng, f.latitude, f.longitude);
-        return { ...f, distance_km: distance };
+    if (userLat != null && userLng != null && !isNaN(userLat) && !isNaN(userLng)) {
+      rows = rows.map((f) => {
+        const dist = haversineDistance(userLat, userLng, f.latitude, f.longitude);
+        return {
+          ...f,
+          distance_km: dist,
+          distance_meters: dist != null ? Math.round(dist * 1000) : null
+        };
       });
 
-      if (maxRadius) {
-        facilities = facilities.filter(f => f.distance_km <= maxRadius);
+      // Filter by radius if specified
+      if (radius_km && radius_km !== 'all') {
+        const maxDist = parseFloat(radius_km);
+        if (!isNaN(maxDist)) {
+          rows = rows.filter(f => f.distance_km != null && f.distance_km <= maxDist);
+        }
       }
 
-      // Sort by proximity
-      facilities.sort((a, b) => a.distance_km - b.distance_km);
+      // Sort by distance if requested or default
+      if (sort === 'nearest' || !sort) {
+        rows.sort((a, b) => (a.distance_km ?? 9999) - (b.distance_km ?? 9999));
+      }
     }
 
-    const total = facilities.length;
-    const paginated = facilities.slice(Number(offset), Number(offset) + Number(limit));
+    if (sort === 'name_asc') {
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sort === 'category') {
+      rows.sort((a, b) => a.category_name.localeCompare(b.category_name));
+    }
 
-    // Safely parse details_json
-    const parsed = paginated.map(f => {
-      let details = null;
-      try {
-        if (f.details_json) details = JSON.parse(f.details_json);
-      } catch (e) {}
-      return { ...f, details };
-    });
+    const total = rows.length;
+    const paginated = rows.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
 
     return res.json({
       total,
-      limit: Number(limit),
-      offset: Number(offset),
-      facilities: parsed
+      facilities: paginated,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
     });
   } catch (err) {
     console.error('Facilities list error:', err);
@@ -133,20 +142,21 @@ router.get('/', (req, res) => {
   }
 });
 
-// Single Facility Detail
+// 3. Single Facility Details + Nearby Facilities
 router.get('/:id', (req, res) => {
   try {
     const { id } = req.params;
     const { user_lat, user_lng } = req.query;
 
     const facility = db.prepare(`
-      SELECT f.*,
-        fc.name as category_name, fc.color as category_color, fc.icon as category_icon,
-        t.name as taluk_name,
-        a.name as area_name
+      SELECT 
+        f.*,
+        fc.name AS category_name,
+        fc.color AS category_color,
+        fc.icon AS category_icon,
+        a.name AS area_name
       FROM facilities f
       JOIN facility_categories fc ON f.category_id = fc.id
-      LEFT JOIN taluks t ON f.taluk_id = t.id
       LEFT JOIN areas a ON f.area_id = a.id
       WHERE f.id = ?
     `).get(id);
@@ -155,53 +165,55 @@ router.get('/:id', (req, res) => {
       return res.status(404).json({ error: `Facility '${id}' not found.` });
     }
 
-    let details = null;
-    try {
-      if (facility.details_json) details = JSON.parse(facility.details_json);
-    } catch (e) {}
-
-    let distance_km = null;
-    const uLat = parseFloat(user_lat);
-    const uLng = parseFloat(user_lng);
-    if (!isNaN(uLat) && !isNaN(uLng)) {
-      distance_km = haversineDistance(uLat, uLng, facility.latitude, facility.longitude);
+    if (user_lat && user_lng) {
+      const uLat = parseFloat(user_lat);
+      const uLng = parseFloat(user_lng);
+      facility.distance_km = haversineDistance(uLat, uLng, facility.latitude, facility.longitude);
     }
 
-    // Nearby facilities in the same area or taluk
+    // Parse details_json safely
+    if (facility.details_json) {
+      try {
+        facility.details = JSON.parse(facility.details_json);
+      } catch (e) {
+        facility.details = {};
+      }
+    }
+
+    // Nearby facilities within 3 km
     const nearby = db.prepare(`
-      SELECT f.id, f.name, f.category_id, f.sub_type, f.latitude, f.longitude,
-             fc.name as category_name, fc.color as category_color, fc.icon as category_icon
+      SELECT 
+        f.*,
+        fc.name AS category_name,
+        fc.color AS category_color,
+        fc.icon AS category_icon,
+        a.name AS area_name
       FROM facilities f
       JOIN facility_categories fc ON f.category_id = fc.id
-      WHERE f.taluk_id = ? AND f.id != ?
-      LIMIT 8
-    `).all(facility.taluk_id, id).map(item => ({
-      ...item,
-      distance_km: haversineDistance(facility.latitude, facility.longitude, item.latitude, item.longitude)
-    })).sort((a, b) => a.distance_km - b.distance_km);
+      LEFT JOIN areas a ON f.area_id = a.id
+      WHERE f.id != ?
+    `).all(id)
+      .map(f => ({
+        ...f,
+        distance_km: haversineDistance(facility.latitude, facility.longitude, f.latitude, f.longitude)
+      }))
+      .filter(f => f.distance_km != null && f.distance_km <= 3.0)
+      .sort((a, b) => (a.distance_km ?? 999) - (b.distance_km ?? 999))
+      .slice(0, 8);
 
-    return res.json({
-      facility: {
-        ...facility,
-        details,
-        distance_km
-      },
-      nearby
-    });
+    return res.json({ facility, nearby });
   } catch (err) {
     console.error('Facility detail error:', err);
     return res.status(500).json({ error: 'Failed to retrieve facility details.' });
   }
 });
 
-// Admin: Create Facility
-router.post('/', adminMiddleware, (req, res) => {
+// 4. Create Facility (Admin or Planner)
+router.post('/', authMiddleware, plannerOrAdminMiddleware, (req, res) => {
   try {
     const {
-      id,
-      category_id,
-      taluk_id,
       area_id,
+      category_id,
       name,
       sub_type,
       address,
@@ -209,69 +221,71 @@ router.post('/', adminMiddleware, (req, res) => {
       contact_phone,
       contact_email,
       website,
+      opening_hours,
       latitude,
       longitude,
-      operational_status = 'Unknown / Unverified',
+      operational_status = 'Operational',
       verification_status = 'Admin Verified',
       data_origin = 'Admin Verified Data',
-      source_name = 'Tumakuru Municipal Authority Record',
-      source_url = '',
-      verification_notes = '',
-      details = {}
+      source_name = 'Tumkur Urban Management System',
+      source_url,
+      verification_notes,
+      details_json
     } = req.body;
 
-    if (!name || !category_id || !taluk_id || latitude == null || longitude == null) {
-      return res.status(400).json({ error: 'Name, category_id, taluk_id, latitude, and longitude are required.' });
+    if (!name || !category_id || latitude == null || longitude == null) {
+      return res.status(400).json({ error: 'Facility name, category_id, latitude, and longitude are required.' });
     }
 
-    const facId = id?.trim() || `FAC-MANUAL-${Date.now().toString(36).toUpperCase()}`;
+    const id = `fac_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    const insert = db.prepare(`
+    db.prepare(`
       INSERT INTO facilities (
-        id, category_id, taluk_id, area_id, name, sub_type, address, pin_code,
-        contact_phone, contact_email, website, latitude, longitude,
-        operational_status, verification_status, data_origin, source_name,
-        source_url, last_verified_at, verification_notes, details_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, date('now'), ?, ?)
-    `);
-
-    insert.run(
-      facId,
-      category_id,
-      taluk_id,
+        id, area_id, category_id, name, sub_type, address, pin_code,
+        contact_phone, contact_email, website, opening_hours,
+        latitude, longitude, operational_status, verification_status,
+        data_origin, source_name, source_url, last_verified_at,
+        verification_notes, details_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE('now'), ?, ?)
+    `).run(
+      id,
       area_id || null,
+      category_id,
       name.trim(),
       sub_type || 'General Facility',
-      address || 'Tumakuru District',
-      pin_code || null,
+      address || 'Tumkur City',
+      pin_code || '572101',
       contact_phone || null,
       contact_email || null,
       website || null,
+      opening_hours || null,
       parseFloat(latitude),
       parseFloat(longitude),
       operational_status,
       verification_status,
       data_origin,
       source_name,
-      source_url,
-      verification_notes,
-      JSON.stringify(details)
+      source_url || null,
+      verification_notes || `Added by user ${req.user.name}`,
+      typeof details_json === 'object' ? JSON.stringify(details_json) : (details_json || null)
     );
 
     // Audit log
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'FACILITY_CREATE', `Created facility ${facId} (${name}) in ${taluk_id}`);
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'CREATE_FACILITY', ?)
+    `).run(req.user.id, `Created facility '${name}' in area '${area_id}'`);
 
-    const created = db.prepare('SELECT * FROM facilities WHERE id = ?').get(facId);
-    return res.status(201).json({ message: 'Facility registered successfully', facility: created });
+    const created = db.prepare('SELECT * FROM facilities WHERE id = ?').get(id);
+    return res.status(201).json({ message: 'Facility created successfully.', facility: created });
   } catch (err) {
-    console.error('Facility create error:', err);
-    return res.status(500).json({ error: 'Failed to create facility: ' + err.message });
+    console.error('Create facility error:', err);
+    return res.status(500).json({ error: 'Failed to create facility.' });
   }
 });
 
-// Admin: Update Facility
-router.put('/:id', adminMiddleware, (req, res) => {
+// 5. Update Facility (Admin or Planner)
+router.put('/:id', authMiddleware, plannerOrAdminMiddleware, (req, res) => {
   try {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM facilities WHERE id = ?').get(id);
@@ -280,59 +294,81 @@ router.put('/:id', adminMiddleware, (req, res) => {
     }
 
     const {
-      name = existing.name,
-      category_id = existing.category_id,
-      taluk_id = existing.taluk_id,
-      area_id = existing.area_id,
-      sub_type = existing.sub_type,
-      address = existing.address,
-      pin_code = existing.pin_code,
-      contact_phone = existing.contact_phone,
-      contact_email = existing.contact_email,
-      website = existing.website,
-      latitude = existing.latitude,
-      longitude = existing.longitude,
-      operational_status = existing.operational_status,
-      verification_status = existing.verification_status,
-      data_origin = existing.data_origin,
-      source_name = existing.source_name,
-      source_url = existing.source_url,
-      verification_notes = existing.verification_notes,
-      details
+      area_id,
+      category_id,
+      name,
+      sub_type,
+      address,
+      pin_code,
+      contact_phone,
+      contact_email,
+      website,
+      opening_hours,
+      latitude,
+      longitude,
+      operational_status,
+      verification_status,
+      verification_notes,
+      details_json
     } = req.body;
 
-    const detailsJson = details ? JSON.stringify(details) : existing.details_json;
-
     db.prepare(`
-      UPDATE facilities SET
-        name = ?, category_id = ?, taluk_id = ?, area_id = ?, sub_type = ?,
-        address = ?, pin_code = ?, contact_phone = ?, contact_email = ?,
-        website = ?, latitude = ?, longitude = ?, operational_status = ?,
-        verification_status = ?, data_origin = ?, source_name = ?,
-        source_url = ?, last_verified_at = date('now'), verification_notes = ?,
-        details_json = ?
+      UPDATE facilities
+      SET
+        area_id = COALESCE(?, area_id),
+        category_id = COALESCE(?, category_id),
+        name = COALESCE(?, name),
+        sub_type = COALESCE(?, sub_type),
+        address = COALESCE(?, address),
+        pin_code = COALESCE(?, pin_code),
+        contact_phone = COALESCE(?, contact_phone),
+        contact_email = COALESCE(?, contact_email),
+        website = COALESCE(?, website),
+        opening_hours = COALESCE(?, opening_hours),
+        latitude = COALESCE(?, latitude),
+        longitude = COALESCE(?, longitude),
+        operational_status = COALESCE(?, operational_status),
+        verification_status = COALESCE(?, verification_status),
+        verification_notes = COALESCE(?, verification_notes),
+        details_json = COALESCE(?, details_json),
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
-      name, category_id, taluk_id, area_id, sub_type, address, pin_code,
-      contact_phone, contact_email, website, parseFloat(latitude), parseFloat(longitude),
-      operational_status, verification_status, data_origin, source_name, source_url,
-      verification_notes, detailsJson, id
+      area_id,
+      category_id,
+      name ? name.trim() : null,
+      sub_type,
+      address,
+      pin_code,
+      contact_phone,
+      contact_email,
+      website,
+      opening_hours,
+      latitude != null ? parseFloat(latitude) : null,
+      longitude != null ? parseFloat(longitude) : null,
+      operational_status,
+      verification_status,
+      verification_notes,
+      typeof details_json === 'object' ? JSON.stringify(details_json) : details_json,
+      id
     );
 
     // Audit log
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'FACILITY_UPDATE', `Updated facility ${id} (${name})`);
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'UPDATE_FACILITY', ?)
+    `).run(req.user.id, `Updated facility details for: ${id}`);
 
     const updated = db.prepare('SELECT * FROM facilities WHERE id = ?').get(id);
-    return res.json({ message: 'Facility updated successfully', facility: updated });
+    return res.json({ message: 'Facility updated successfully.', facility: updated });
   } catch (err) {
-    console.error('Facility update error:', err);
-    return res.status(500).json({ error: 'Failed to update facility: ' + err.message });
+    console.error('Update facility error:', err);
+    return res.status(500).json({ error: 'Failed to update facility.' });
   }
 });
 
-// Admin: Quick Verify Status
-router.put('/:id/verify', adminMiddleware, (req, res) => {
+// 6. Verify Facility Record (Admin only)
+router.put('/:id/verify', authMiddleware, adminMiddleware, (req, res) => {
   try {
     const { id } = req.params;
     const { operational_status, verification_status, notes } = req.body;
@@ -343,41 +379,51 @@ router.put('/:id/verify', adminMiddleware, (req, res) => {
     }
 
     db.prepare(`
-      UPDATE facilities SET
+      UPDATE facilities
+      SET
         operational_status = COALESCE(?, operational_status),
-        verification_status = COALESCE(?, verification_status),
+        verification_status = COALESCE(?, 'Officially Verified'),
+        last_verified_at = DATE('now'),
         verification_notes = COALESCE(?, verification_notes),
-        last_verified_at = date('now')
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(operational_status, verification_status, notes, id);
 
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'FACILITY_VERIFY', `Verified facility ${id} as ${operational_status} / ${verification_status}`);
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'VERIFY_FACILITY', ?)
+    `).run(req.user.id, `Verified facility '${existing.name}' (${id}) status: ${verification_status}`);
 
     const updated = db.prepare('SELECT * FROM facilities WHERE id = ?').get(id);
-    return res.json({ message: 'Verification status updated', facility: updated });
+    return res.json({ message: 'Facility verified successfully.', facility: updated });
   } catch (err) {
-    return res.status(500).json({ error: 'Verification update failed: ' + err.message });
+    console.error('Verify facility error:', err);
+    return res.status(500).json({ error: 'Failed to verify facility.' });
   }
 });
 
-// Admin: Delete Facility
-router.delete('/:id', adminMiddleware, (req, res) => {
+// 7. Delete Facility (Admin only)
+router.delete('/:id', authMiddleware, adminMiddleware, (req, res) => {
   try {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM facilities WHERE id = ?').get(id);
+    const existing = db.prepare('SELECT name FROM facilities WHERE id = ?').get(id);
     if (!existing) {
       return res.status(404).json({ error: `Facility '${id}' not found.` });
     }
 
     db.prepare('DELETE FROM facilities WHERE id = ?').run(id);
 
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'FACILITY_DELETE', `Deleted facility ${id} (${existing.name})`);
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'DELETE_FACILITY', ?)
+    `).run(req.user.id, `Deleted facility '${existing.name}' (${id})`);
 
-    return res.json({ message: `Facility '${id}' deleted successfully.` });
+    return res.json({ message: `Facility '${existing.name}' deleted successfully.` });
   } catch (err) {
-    return res.status(500).json({ error: 'Delete failed: ' + err.message });
+    console.error('Delete facility error:', err);
+    return res.status(500).json({ error: 'Failed to delete facility.' });
   }
 });
 

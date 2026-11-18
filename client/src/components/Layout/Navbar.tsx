@@ -6,13 +6,12 @@ import {
   Search,
   Building,
   Menu,
-  X,
-  User as UserIcon,
   LogOut,
   ShieldAlert,
   Compass,
   Layers,
-  MapPin
+  MapPin,
+  Bookmark
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -52,10 +51,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
               </div>
               <div className="flex flex-col">
                 <span className="font-extrabold text-base tracking-wide text-white flex items-center gap-1.5">
-                  TUMAKURU <span className="text-brand-cyan font-normal">SMART CITY</span>
+                  TUMKUR <span className="text-brand-cyan font-normal">SMART CITY</span>
                 </span>
                 <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase -mt-0.5">
-                  District Planning & GIS Mapping
+                  Area-Wise Infrastructure & Planning
                 </span>
               </div>
             </Link>
@@ -69,7 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
             >
               <div className="flex items-center gap-2.5">
                 <Search className="w-4 h-4 text-slate-400 group-hover:text-brand-cyan transition-colors" />
-                <span>Search Tumakuru, 10 taluks, hospitals, schools...</span>
+                <span>Search areas (SS Puram, Batawadi), hospitals, schools...</span>
               </div>
               <kbd className="hidden sm:inline-block bg-navy-700 text-slate-300 text-[10px] font-mono px-1.5 py-0.5 rounded border border-navy-600">
                 Ctrl K
@@ -88,11 +87,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
             </button>
 
             <Link
+              to="/areas"
+              className="hidden lg:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-slate-200 border border-navy-700 transition-colors"
+            >
+              <MapPin className="w-3.5 h-3.5 text-brand-cyan" />
+              <span>Explore Areas</span>
+            </Link>
+
+            <Link
               to="/facilities"
               className="hidden lg:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-navy-800 hover:bg-navy-700 text-slate-200 border border-navy-700 transition-colors"
             >
               <Layers className="w-3.5 h-3.5 text-brand-teal" />
-              <span>Map Facilities</span>
+              <span>Facility Explorer</span>
             </Link>
 
             <Link
@@ -100,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
               className="hidden lg:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-brand-cyan border border-teal-500/30 transition-colors"
             >
               <Compass className="w-3.5 h-3.5" />
-              <span>Planning & Gaps</span>
+              <span>Smart Planning</span>
             </Link>
 
             {/* User Profile Chip */}
@@ -142,11 +149,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                     </div>
 
                     <Link
-                      to="/district"
+                      to="/areas"
                       className="flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
                     >
                       <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                      <span>District Explorer</span>
+                      <span>Explore City Areas</span>
+                    </Link>
+
+                    <Link
+                      to="/saved"
+                      className="flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Bookmark className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Saved Locations</span>
                     </Link>
 
                     {isAdmin && (
@@ -155,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                         className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 transition-colors"
                       >
                         <ShieldAlert className="w-3.5 h-3.5" />
-                        <span>Admin Console</span>
+                        <span>Admin Panel</span>
                       </Link>
                     )}
 

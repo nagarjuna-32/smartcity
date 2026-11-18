@@ -1,122 +1,143 @@
 import express from 'express';
 import db from '../database/db.js';
-import { plannerOrAdminMiddleware } from '../middleware/auth.js';
+import { authMiddleware, plannerOrAdminMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Smart City Planning: Facility Coverage & Gap Detection Analytics
+/**
+ * 1. Area-Level Smart City Planning & Infrastructure Analytics
+ */
 router.get('/analytics', (req, res) => {
   try {
-    const { taluk_id } = req.query;
+    const { area_id } = req.query;
 
-    let talukFilter = '';
+    // Fetch all areas with category counts
+    let areasQuery = `
+      SELECT 
+        a.id,
+        a.name,
+        a.population,
+        a.latitude,
+        a.longitude,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id) AS total_facilities,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'schools') AS schools_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'hospitals') AS hospitals_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'provision_stores') AS provision_stores_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'medical_stores') AS medical_stores_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'post_offices') AS post_offices_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'residential_layouts') AS layouts_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'sites_and_land') AS sites_count,
+        (SELECT COUNT(*) FROM facilities f WHERE f.area_id = a.id AND f.category_id = 'other_facilities') AS other_count
+      FROM areas a
+      WHERE 1=1
+    `;
     const params = [];
-    if (taluk_id && taluk_id !== 'all') {
-      talukFilter = ' WHERE t.id = ?';
-      params.push(taluk_id.toLowerCase());
+
+    if (area_id && area_id !== 'all') {
+      areasQuery += ' AND a.id = ?';
+      params.push(area_id.toLowerCase());
     }
 
-    // 1. Taluk-wise facility counts and coverage benchmarks
-    const talukStats = db.prepare(`
-      SELECT
-        t.id, t.name, t.population, t.area_sq_km,
-        COUNT(DISTINCT a.id) as total_settlements,
-        COUNT(DISTINCT f.id) as total_facilities,
-        COUNT(DISTINCT CASE WHEN f.category_id = 'schools_colleges' THEN f.id END) as schools_count,
-        COUNT(DISTINCT CASE WHEN f.category_id = 'hospitals' AND f.operational_status = 'Operational' THEN f.id END) as operational_hospitals,
-        COUNT(DISTINCT CASE WHEN f.category_id = 'hospitals' THEN f.id END) as total_hospitals,
-        COUNT(DISTINCT CASE WHEN f.category_id = 'post_offices' THEN f.id END) as post_offices_count,
-        COUNT(DISTINCT CASE WHEN f.category_id = 'residential_layouts' THEN f.id END) as residential_layouts_count,
-        COUNT(DISTINCT CASE WHEN f.category_id = 'sites_land' THEN f.id END) as land_sites_count
-      FROM taluks t
-      LEFT JOIN areas a ON t.id = a.taluk_id
-      LEFT JOIN facilities f ON t.id = f.taluk_id
-      ${talukFilter}
-      GROUP BY t.id
-      ORDER BY t.population DESC
-    `).all(...params);
+    areasQuery += ' ORDER BY total_facilities ASC';
 
-    // 2. Identify infrastructure gaps based on actual data
-    const detectedGaps = [];
+    const areaStats = db.prepare(areasQuery).all(...params);
 
-    for (const ts of talukStats) {
-      // Healthcare deficit: population > 150k with fewer than 2 operational hospitals
-      if (ts.population > 150000 && ts.operational_hospitals < 2) {
-        detectedGaps.push({
-          id: `GAP-HLT-${ts.id.toUpperCase()}`,
-          taluk_id: ts.id,
-          taluk_name: ts.name,
-          category: 'Healthcare Access Gap',
-          title: `Secondary Healthcare Deficit in ${ts.name}`,
+    // Compute Automated Infrastructure Gap Analysis
+    const gapAnalysis = [];
+
+    for (const a of areaStats) {
+      // Healthcare deficit: 0 hospitals in area
+      if (a.hospitals_count === 0) {
+        gapAnalysis.push({
+          id: `gap_health_${a.id}`,
+          area_id: a.id,
+          area_name: a.name,
+          category: 'Hospitals & Healthcare',
+          title: `Healthcare Deficit in ${a.name}`,
           severity: 'High',
-          supporting_data: `Population of ${ts.population.toLocaleString()} has only ${ts.operational_hospitals} confirmed operational hospital recorded.`,
-          recommendation: 'Establish an upgraded 100-bed Sub-Divisional Hospital or Trauma Care Centre with dialysis and pediatric ICU.',
-          target_timeline: '2027-2028',
-          confidence: 'High (Census & Verified NHM records)'
+          supporting_data: `${a.name} has 0 registered primary hospitals or clinics. Population of ~${(a.population || 15000).toLocaleString()} must travel outside locality for emergency care.`,
+          recommendation: `Establish an Urban Primary Health Centre (UPHC) or 24/7 Maternity Dispensary in ${a.name}.`,
+          target_timeline: '2026 - 2027',
+          confidence: 'High (Mapped Facility Density)'
         });
       }
 
-      // Educational institutions gap
-      if (ts.schools_count < 2) {
-        detectedGaps.push({
-          id: `GAP-EDU-${ts.id.toUpperCase()}`,
-          taluk_id: ts.id,
-          taluk_name: ts.name,
-          category: 'Higher Education Access',
-          title: `Limited Higher Education & Technical Institutes in ${ts.name}`,
+      // Pharmacy gap: 0 medical stores in area
+      if (a.medical_stores_count === 0) {
+        gapAnalysis.push({
+          id: `gap_pharma_${a.id}`,
+          area_id: a.id,
+          area_name: a.name,
+          category: 'Medical Stores',
+          title: `Essential Pharmacy Gap in ${a.name}`,
           severity: 'Medium',
-          supporting_data: `Only ${ts.schools_count} major educational institution currently mapped for a taluk area of ${ts.area_sq_km} sq km.`,
-          recommendation: 'Propose a Government Polytechnic or Skill Development Training Institute affiliated with Tumkur University.',
-          target_timeline: '2028',
-          confidence: 'Medium (Based on active directory records)'
+          supporting_data: `Zero retail pharmacies or Jan Aushadhi Kendras mapped directly within ${a.name}.`,
+          recommendation: `Incentivize Jan Aushadhi generic dispensary setup or 24/7 retail chemist license in ${a.name}.`,
+          target_timeline: '2026',
+          confidence: 'Medium (Survey Data)'
         });
       }
 
-      // Postal network access
-      if (ts.post_offices_count < 2) {
-        detectedGaps.push({
-          id: `GAP-POST-${ts.id.toUpperCase()}`,
-          taluk_id: ts.id,
-          taluk_name: ts.name,
-          category: 'Civic Communication & Banking',
-          title: `Postal & Direct Benefit Banking Outreach Deficit in ${ts.name}`,
+      // Provision stores gap: 0 or low provision stores
+      if (a.provision_stores_count === 0) {
+        gapAnalysis.push({
+          id: `gap_provision_${a.id}`,
+          area_id: a.id,
+          area_name: a.name,
+          category: 'Provision Stores',
+          title: `Daily Provisions & Grocery Access Deficit in ${a.name}`,
           severity: 'Medium',
-          supporting_data: `Only ${ts.post_offices_count} departmental post office registered in town core. Rural gram panchayats rely on remote branches.`,
-          recommendation: 'Authorize 2 additional Sub-Post Offices equipped with India Post Payments Bank (IPPB) micro-ATMs.',
+          supporting_data: `No organized grocery or provision store mapped in ${a.name}. Residents must travel to adjacent commercial corridors for daily essentials.`,
+          recommendation: `Plan neighborhood daily essentials convenience market or APMC outlet in ${a.name}.`,
           target_timeline: '2027',
-          confidence: 'High (India Post PIN database)'
+          confidence: 'Medium'
         });
       }
 
-      // Residential layouts approval
-      if (ts.residential_layouts_count === 0 && ts.population > 200000) {
-        detectedGaps.push({
-          id: `GAP-LAY-${ts.id.toUpperCase()}`,
-          taluk_id: ts.id,
-          taluk_name: ts.name,
-          category: 'Planned Urban Housing',
-          title: `Shortage of Approved Residential Layouts in ${ts.name}`,
-          severity: 'Low',
-          supporting_data: 'No TUDA or KHB approved residential layouts currently registered on platform for this fast-growing center.',
-          recommendation: 'Formulate a master-planned satellite residential layout with civic amenities to prevent unapproved sprawling.',
-          target_timeline: '2028',
-          confidence: 'Verified (TUDA Plan Registry)'
+      // Schools gap: 0 schools in area
+      if (a.schools_count === 0) {
+        gapAnalysis.push({
+          id: `gap_school_${a.id}`,
+          area_id: a.id,
+          area_name: a.name,
+          category: 'Schools & Education',
+          title: `Primary Education Access Gap in ${a.name}`,
+          severity: 'High',
+          supporting_data: `Absence of mapped primary or secondary public schools within ${a.name}.`,
+          recommendation: `Allocate civic amenity plot for a Government Primary / Model English School.`,
+          target_timeline: '2027 - 2028',
+          confidence: 'High'
         });
       }
     }
 
-    // 3. Proposed projects summary
+    // Projects summary by status & category
     const projectsSummary = db.prepare(`
-      SELECT status, COUNT(*) as count, SUM(estimated_budget_lakhs) as total_budget_lakhs
+      SELECT 
+        status, 
+        COUNT(*) as count,
+        COALESCE(SUM(estimated_budget_lakhs), 0) as total_budget_lakhs,
+        COALESCE(SUM(expected_beneficiaries), 0) as total_beneficiaries
       FROM proposed_projects
       GROUP BY status
     `).all();
 
+    // Summary KPIs
+    const totalFacilities = db.prepare('SELECT COUNT(*) as count FROM facilities').get().count;
+    const totalAreas = db.prepare('SELECT COUNT(*) as count FROM areas').get().count;
+    const verifiedCount = db.prepare(`SELECT COUNT(*) as count FROM facilities WHERE verification_status IN ('Officially Verified', 'Admin Verified')`).get().count;
+
     return res.json({
-      taluk_statistics: talukStats,
-      infrastructure_gaps: detectedGaps,
+      area_statistics: areaStats,
+      infrastructure_gaps: gapAnalysis,
       projects_summary: projectsSummary,
-      data_confidence_notice: 'Gap analysis is performed against confirmed municipal datasets and open geographic records. Unmapped rural private clinics or unlisted private tutorials may exist locally.'
+      summary: {
+        total_areas: totalAreas,
+        total_facilities: totalFacilities,
+        verified_ratio: totalFacilities > 0 ? Math.round((verifiedCount / totalFacilities) * 100) : 0,
+        gaps_detected: gapAnalysis.length
+      },
+      data_confidence_notice: 'Preliminary analysis based on available mapped data. This does not confirm the absence of facilities.'
     });
   } catch (err) {
     console.error('Planning analytics error:', err);
@@ -124,151 +145,119 @@ router.get('/analytics', (req, res) => {
   }
 });
 
-// List Proposed Projects
+/**
+ * 2. Proposed Capital Works Projects CRUD
+ */
 router.get('/proposed-projects', (req, res) => {
   try {
-    const { taluk_id, priority, status } = req.query;
+    const { area_id, status, priority, category } = req.query;
 
     let query = `
-      SELECT p.*,
-        t.name as taluk_name,
-        a.name as area_name,
-        u.name as proposed_by_name
+      SELECT 
+        p.*,
+        a.name AS area_name
       FROM proposed_projects p
-      LEFT JOIN taluks t ON p.taluk_id = t.id
       LEFT JOIN areas a ON p.area_id = a.id
-      LEFT JOIN users u ON p.proposed_by_user_id = u.id
       WHERE 1=1
     `;
     const params = [];
 
-    if (taluk_id && taluk_id !== 'all') {
-      query += ' AND p.taluk_id = ?';
-      params.push(taluk_id.toLowerCase());
+    if (area_id && area_id !== 'all') {
+      query += ' AND p.area_id = ?';
+      params.push(area_id.toLowerCase());
     }
 
-    if (priority && priority !== 'all') {
-      query += ' AND p.priority = ?';
-      params.push(priority);
-    }
-
-    if (status && status !== 'all') {
+    if (status && status !== 'All') {
       query += ' AND p.status = ?';
       params.push(status);
     }
 
-    query += ' ORDER BY p.created_at DESC';
+    if (priority && priority !== 'All') {
+      query += ' AND p.priority = ?';
+      params.push(priority);
+    }
+
+    if (category && category !== 'All') {
+      query += ' AND p.category = ?';
+      params.push(category);
+    }
+
+    query += ' ORDER BY p.priority DESC, p.created_at DESC';
 
     const projects = db.prepare(query).all(...params);
-    return res.json({ projects });
+    return res.json({ projects, total: projects.length });
   } catch (err) {
-    console.error('Proposed projects fetch error:', err);
+    console.error('Proposed projects list error:', err);
     return res.status(500).json({ error: 'Failed to retrieve proposed projects.' });
   }
 });
 
-// Create Proposed Project (Planner or Admin)
-router.post('/proposed-projects', plannerOrAdminMiddleware, (req, res) => {
+router.post('/proposed-projects', authMiddleware, (req, res) => {
   try {
     const {
+      area_id,
       title,
       category,
-      taluk_id,
-      area_id,
+      sub_type,
       latitude,
       longitude,
-      priority = 'Medium',
-      status = 'Proposed',
-      estimated_budget_lakhs = 0,
+      priority = 'High',
+      estimated_budget_lakhs,
       target_completion_year,
       rationale,
-      expected_beneficiaries = 0
+      expected_beneficiaries
     } = req.body;
 
-    if (!title || !category || !taluk_id || latitude == null || longitude == null || !rationale) {
-      return res.status(400).json({ error: 'Title, category, taluk_id, coordinates, and rationale are required.' });
+    if (!title || !category || latitude == null || longitude == null) {
+      return res.status(400).json({ error: 'Title, category, latitude, and longitude are required.' });
     }
 
-    const prjId = `PRJ-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`;
+    const id = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    const insert = db.prepare(`
+    db.prepare(`
       INSERT INTO proposed_projects (
-        id, title, category, taluk_id, area_id, latitude, longitude,
+        id, area_id, title, category, sub_type, latitude, longitude,
         priority, status, estimated_budget_lakhs, target_completion_year,
-        rationale, expected_beneficiaries, proposed_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    insert.run(
-      prjId,
+        rationale, expected_beneficiaries, proposed_by_user_id, proposed_by_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Proposed', ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      area_id || null,
       title.trim(),
       category,
-      taluk_id.toLowerCase(),
-      area_id || null,
+      sub_type || 'Civic Infrastructure',
       parseFloat(latitude),
       parseFloat(longitude),
       priority,
-      status,
-      parseFloat(estimated_budget_lakhs || 0),
-      target_completion_year ? parseInt(target_completion_year) : null,
-      rationale.trim(),
-      parseInt(expected_beneficiaries || 0),
-      req.user.id
+      estimated_budget_lakhs ? parseFloat(estimated_budget_lakhs) : null,
+      target_completion_year ? parseInt(target_completion_year) : 2027,
+      rationale || 'Infrastructure improvement proposed for community betterment.',
+      expected_beneficiaries ? parseInt(expected_beneficiaries) : null,
+      req.user.id,
+      req.user.name
     );
 
     // Audit log
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'PROJECT_PROPOSE', `Proposed project ${prjId} (${title}) in ${taluk_id}`);
-
-    const created = db.prepare('SELECT * FROM proposed_projects WHERE id = ?').get(prjId);
-    return res.status(201).json({ message: 'Proposed development project saved successfully', project: created });
-  } catch (err) {
-    console.error('Project creation error:', err);
-    return res.status(500).json({ error: 'Failed to save proposed project: ' + err.message });
-  }
-});
-
-// Update Proposed Project
-router.put('/proposed-projects/:id', plannerOrAdminMiddleware, (req, res) => {
-  try {
-    const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM proposed_projects WHERE id = ?').get(id);
-    if (!existing) {
-      return res.status(404).json({ error: `Proposed project '${id}' not found.` });
-    }
-
-    const {
-      title = existing.title,
-      category = existing.category,
-      priority = existing.priority,
-      status = existing.status,
-      estimated_budget_lakhs = existing.estimated_budget_lakhs,
-      target_completion_year = existing.target_completion_year,
-      rationale = existing.rationale,
-      expected_beneficiaries = existing.expected_beneficiaries
-    } = req.body;
-
     db.prepare(`
-      UPDATE proposed_projects SET
-        title = ?, category = ?, priority = ?, status = ?,
-        estimated_budget_lakhs = ?, target_completion_year = ?,
-        rationale = ?, expected_beneficiaries = ?
-      WHERE id = ?
-    `).run(
-      title, category, priority, status, parseFloat(estimated_budget_lakhs),
-      target_completion_year ? parseInt(target_completion_year) : null,
-      rationale, parseInt(expected_beneficiaries), id
-    );
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'PROPOSE_PROJECT', ?)
+    `).run(req.user.id, `Submitted project proposal: '${title}' in area '${area_id}'`);
 
-    const updated = db.prepare('SELECT * FROM proposed_projects WHERE id = ?').get(id);
-    return res.json({ message: 'Project updated successfully', project: updated });
+    const created = db.prepare(`
+      SELECT p.*, a.name AS area_name
+      FROM proposed_projects p
+      LEFT JOIN areas a ON p.area_id = a.id
+      WHERE p.id = ?
+    `).get(id);
+
+    return res.status(201).json({ message: 'Project proposal submitted successfully.', project: created });
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to update project: ' + err.message });
+    console.error('Create proposed project error:', err);
+    return res.status(500).json({ error: 'Failed to create project proposal.' });
   }
 });
 
-// Delete Proposed Project
-router.delete('/proposed-projects/:id', plannerOrAdminMiddleware, (req, res) => {
+router.put('/proposed-projects/:id', authMiddleware, plannerOrAdminMiddleware, (req, res) => {
   try {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM proposed_projects WHERE id = ?').get(id);
@@ -276,10 +265,91 @@ router.delete('/proposed-projects/:id', plannerOrAdminMiddleware, (req, res) => 
       return res.status(404).json({ error: `Project '${id}' not found.` });
     }
 
-    db.prepare('DELETE FROM proposed_projects WHERE id = ?').run(id);
-    return res.json({ message: `Project '${id}' removed.` });
+    const {
+      title,
+      category,
+      sub_type,
+      latitude,
+      longitude,
+      priority,
+      status,
+      estimated_budget_lakhs,
+      target_completion_year,
+      rationale,
+      expected_beneficiaries
+    } = req.body;
+
+    db.prepare(`
+      UPDATE proposed_projects
+      SET
+        title = COALESCE(?, title),
+        category = COALESCE(?, category),
+        sub_type = COALESCE(?, sub_type),
+        latitude = COALESCE(?, latitude),
+        longitude = COALESCE(?, longitude),
+        priority = COALESCE(?, priority),
+        status = COALESCE(?, status),
+        estimated_budget_lakhs = COALESCE(?, estimated_budget_lakhs),
+        target_completion_year = COALESCE(?, target_completion_year),
+        rationale = COALESCE(?, rationale),
+        expected_beneficiaries = COALESCE(?, expected_beneficiaries),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      title ? title.trim() : null,
+      category,
+      sub_type,
+      latitude != null ? parseFloat(latitude) : null,
+      longitude != null ? parseFloat(longitude) : null,
+      priority,
+      status,
+      estimated_budget_lakhs != null ? parseFloat(estimated_budget_lakhs) : null,
+      target_completion_year != null ? parseInt(target_completion_year) : null,
+      rationale,
+      expected_beneficiaries != null ? parseInt(expected_beneficiaries) : null,
+      id
+    );
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'UPDATE_PROJECT', ?)
+    `).run(req.user.id, `Updated proposed project '${id}' status to '${status}'`);
+
+    const updated = db.prepare(`
+      SELECT p.*, a.name AS area_name
+      FROM proposed_projects p
+      LEFT JOIN areas a ON p.area_id = a.id
+      WHERE p.id = ?
+    `).get(id);
+
+    return res.json({ message: 'Project proposal updated successfully.', project: updated });
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to delete project.' });
+    console.error('Update proposed project error:', err);
+    return res.status(500).json({ error: 'Failed to update project proposal.' });
+  }
+});
+
+router.delete('/proposed-projects/:id', authMiddleware, plannerOrAdminMiddleware, (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = db.prepare('SELECT title FROM proposed_projects WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: `Project '${id}' not found.` });
+    }
+
+    db.prepare('DELETE FROM proposed_projects WHERE id = ?').run(id);
+
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'DELETE_PROJECT', ?)
+    `).run(req.user.id, `Deleted proposed project '${existing.title}' (${id})`);
+
+    return res.json({ message: `Proposed project '${existing.title}' deleted successfully.` });
+  } catch (err) {
+    console.error('Delete proposed project error:', err);
+    return res.status(500).json({ error: 'Failed to delete proposed project.' });
   }
 });
 

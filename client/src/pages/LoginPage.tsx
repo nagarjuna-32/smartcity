@@ -1,249 +1,179 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Building, ShieldCheck, UserCheck, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
+import { Building, Lock, Mail, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { login, register } = useAuth();
-  const navigate = useNavigate();
-
-  const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<'User' | 'Planner' | 'Admin'>('User');
   const [rememberMe, setRememberMe] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      if (isRegistering) {
-        await register({ name, email, password, role });
-      } else {
-        await login({ email, password });
-      }
+      await login({ email, password });
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please check credentials.');
+      setError(err.message || 'Invalid email or password. Please verify your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickLogin = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setIsRegistering(false);
+  const fillCredentials = (roleEmail: string, rolePass: string) => {
+    setEmail(roleEmail);
+    setPassword(rolePass);
+    setError(null);
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 bg-navy-900 overflow-hidden">
-      {/* Visual GIS Background Map Overlay */}
-      <div
-        className="absolute inset-0 opacity-20 pointer-events-none bg-cover bg-center filter saturate-150"
-        style={{
-          backgroundImage: `radial-gradient(#087E8B 1px, transparent 1px), radial-gradient(#00ADB5 1px, #0A192F 1px)`,
-          backgroundSize: '40px 40px',
-          backgroundPosition: '0 0, 20px 20px'
-        }}
-      />
+    <div className="relative min-h-screen flex items-center justify-center p-4 bg-navy-950 overflow-hidden font-sans">
+      {/* Background GIS Grid & Gradient */}
+      <div className="absolute inset-0 bg-[radial-gradient(#087E8B_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none" />
+      <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-brand-cyan/20 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-brand-teal/20 blur-3xl pointer-events-none" />
 
-      {/* Radial Gradient Glows */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-brand-teal/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-brand-cyan/20 rounded-full blur-3xl pointer-events-none" />
-
-      {/* Main Login Card */}
-      <div className="relative w-full max-w-md bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-200/80 p-8 sm:p-10 z-10 animate-fade-in">
-        {/* Header Logo & Title */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-brand-teal to-brand-cyan flex items-center justify-center text-white shadow-lg mb-3">
-            <Building className="w-8 h-8" />
+      {/* Main Glassmorphism Container */}
+      <div className="relative z-10 w-full max-w-md bg-navy-900/80 backdrop-blur-xl border border-navy-700/80 rounded-3xl p-8 shadow-2xl text-white animate-fade-in">
+        {/* Brand Header */}
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-teal to-brand-cyan shadow-lg shadow-brand-teal/30 mb-4 transform hover:scale-105 transition-transform">
+            <Building className="w-8 h-8 text-white" />
           </div>
 
-          <h1 className="text-2xl font-black text-navy-900 tracking-tight flex items-center justify-center gap-1.5">
-            TUMAKURU <span className="text-brand-teal">SMART CITY</span>
+          <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-1.5">
+            TUMKUR <span className="text-brand-cyan">SMART CITY</span>
           </h1>
 
-          <p className="text-xs font-bold text-slate-800 tracking-wider uppercase mt-1">
-            "Explore. Analyze. Plan. Develop."
+          <p className="text-xs text-brand-cyan font-medium mt-1 uppercase tracking-wider">
+            Area-Wise Infrastructure & Planning
           </p>
 
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            A Smart Digital Platform for Tumakuru District
+          <p className="text-xs text-slate-400 mt-2 italic">
+            "Explore Your Area. Discover Infrastructure. Plan a Smarter City."
           </p>
         </div>
 
-        {/* Error Alert Box */}
+        {/* Error Alert */}
         {error && (
-          <div className="mb-5 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="mb-5 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Auth Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {isRegistering && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Full Name *
-              </label>
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Email Address
+            </label>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                type="text"
+                type="email"
                 required
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Ramesh Kumar"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal/40 focus:border-brand-teal bg-slate-50/50"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@tumkur.gov.in"
+                className="w-full bg-navy-800/80 border border-navy-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:border-transparent transition-all"
               />
             </div>
-          )}
+          </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              Email Address *
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Password
             </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="e.g. admin@tumakuru.gov.in"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal/40 focus:border-brand-teal bg-slate-50/50"
-            />
+            <div className="relative">
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full bg-navy-800/80 border border-navy-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-teal focus:border-transparent transition-all"
+              />
+            </div>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Password *
-              </label>
-              {!isRegistering && (
-                <button
-                  type="button"
-                  onClick={() => alert('For demonstration, use password: "Tumakuru@2026" or "Planner@2026"')}
-                  className="text-[11px] text-brand-teal hover:underline font-medium"
-                >
-                  Forgot password?
-                </button>
-              )}
-            </div>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal/40 focus:border-brand-teal bg-slate-50/50"
-            />
+          <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-navy-700 bg-navy-800 text-brand-teal focus:ring-brand-teal focus:ring-offset-navy-900"
+              />
+              <span>Remember me</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => alert('For password reset, please contact Tumkur City Municipal Corporation IT Cell (admin@tumkur.gov.in).')}
+              className="text-brand-cyan hover:underline"
+            >
+              Forgot password?
+            </button>
           </div>
-
-          {isRegistering && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Designated Role
-              </label>
-              <select
-                value={role}
-                onChange={e => setRole(e.target.value as any)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-teal/40 focus:border-brand-teal bg-slate-50/50"
-              >
-                <option value="User">Citizen / Public User</option>
-                <option value="Planner">Urban Development Planner</option>
-              </select>
-            </div>
-          )}
-
-          {!isRegistering && (
-            <div className="flex items-center justify-between py-1">
-              <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={e => setRememberMe(e.target.checked)}
-                  className="rounded border-slate-300 text-brand-teal focus:ring-brand-teal"
-                />
-                <span>Remember me on this browser</span>
-              </label>
-            </div>
-          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-navy-800 to-brand-teal hover:from-navy-900 hover:to-teal-700 shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-brand-teal to-brand-cyan hover:from-teal-600 hover:to-cyan-600 text-white font-bold text-sm shadow-lg shadow-brand-teal/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
           >
             {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Authenticating...</span>
             ) : (
               <>
-                <span>{isRegistering ? 'Create Citizen Account' : 'Access Digital Platform'}</span>
+                <span>Sign In to Tumkur GIS</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
         </form>
 
-        {/* Toggle Register / Login */}
-        <div className="mt-6 text-center text-xs text-slate-600">
-          {isRegistering ? (
-            <>
-              Already have an account?{' '}
-              <button
-                type="button"
-                onClick={() => setIsRegistering(false)}
-                className="font-bold text-brand-teal hover:underline ml-1"
-              >
-                Sign In
-              </button>
-            </>
-          ) : (
-            <>
-              Don't have an account?{' '}
-              <button
-                type="button"
-                onClick={() => setIsRegistering(true)}
-                className="font-bold text-brand-teal hover:underline ml-1"
-              >
-                Create Account
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* One-Click Fast Demo Credentials Pill */}
-        <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+        {/* Demo Credentials Fast-Access Pills */}
+        <div className="mt-6 pt-5 border-t border-navy-800">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider text-center mb-2.5">
             Instant Demo Sign-in
           </p>
-          <div className="flex justify-center gap-2 flex-wrap">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={() => handleQuickLogin('admin@tumakuru.gov.in', 'Tumakuru@2026')}
-              className="text-[11px] px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 font-semibold hover:bg-purple-100 transition-colors"
+              onClick={() => fillCredentials('admin@tumkur.gov.in', 'Tumkur@2026')}
+              className="py-1.5 px-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-[11px] font-semibold text-rose-300 text-center transition-colors truncate"
             >
-              👑 Admin (Full Access)
+              👑 Admin
             </button>
             <button
               type="button"
-              onClick={() => handleQuickLogin('planner@tumakuru.gov.in', 'Planner@2026')}
-              className="text-[11px] px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-semibold hover:bg-blue-100 transition-colors"
+              onClick={() => fillCredentials('planner@tumkur.gov.in', 'Planner@2026')}
+              className="py-1.5 px-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-[11px] font-semibold text-cyan-300 text-center transition-colors truncate"
             >
-              📐 Urban Planner
+              📐 Planner
             </button>
             <button
               type="button"
-              onClick={() => handleQuickLogin('citizen@tumakuru.gov.in', 'Citizen@2026')}
-              className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold hover:bg-emerald-100 transition-colors"
+              onClick={() => fillCredentials('citizen@tumkur.gov.in', 'Citizen@2026')}
+              className="py-1.5 px-2 rounded-lg bg-navy-800 hover:bg-navy-700 border border-navy-700 text-[11px] font-semibold text-emerald-300 text-center transition-colors truncate"
             >
-              👤 Citizen
+              🏡 Citizen
             </button>
           </div>
+        </div>
+
+        {/* Footer info */}
+        <div className="mt-5 text-center text-[11px] text-slate-500">
+          <span>Tumkur Smart City Planning Platform • Karnataka, India</span>
         </div>
       </div>
     </div>

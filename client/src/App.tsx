@@ -4,18 +4,16 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Layout/Navbar';
 import { Sidebar } from './components/Layout/Sidebar';
 
-// Pages
+// Pages - Strictly Area-Wise Smart City Platform
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { DistrictPage } from './pages/DistrictPage';
-import { TaluksPage } from './pages/TaluksPage';
-import { TalukDetailPage } from './pages/TalukDetailPage';
 import { AreasPage } from './pages/AreasPage';
 import { AreaDetailPage } from './pages/AreaDetailPage';
 import { FacilitiesPage } from './pages/FacilitiesPage';
 import { PlanningPage } from './pages/PlanningPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { SavedLocationsPage } from './pages/SavedLocationsPage';
 import { AdminPage } from './pages/AdminPage';
 
 // Protected Route wrapper for Admin
@@ -61,15 +59,13 @@ const AppLayout: React.FC = () => {
           <div className="max-w-7xl mx-auto">
             <Routes>
               <Route path="/" element={<DashboardPage />} />
-              <Route path="/district" element={<DistrictPage />} />
-              <Route path="/taluks" element={<TaluksPage />} />
-              <Route path="/taluks/:id" element={<TalukDetailPage />} />
               <Route path="/areas" element={<AreasPage />} />
               <Route path="/areas/:id" element={<AreaDetailPage />} />
               <Route path="/facilities" element={<FacilitiesPage />} />
               <Route path="/planning" element={<PlanningPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/saved" element={<SavedLocationsPage />} />
               <Route
                 path="/admin"
                 element={

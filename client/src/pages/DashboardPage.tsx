@@ -1,375 +1,438 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import { District, Taluk, SurroundingDistrict, Facility } from '../types';
+import { Area, Facility, FacilityCategory } from '../types';
 import { TumakuruMap } from '../components/Map/TumakuruMap';
 import {
-  Building2,
   MapPin,
+  Search,
   School,
   HeartPulse,
+  ShoppingBasket,
+  Pill,
   Mail,
   Home,
-  Layers,
+  Map,
+  Building2,
   ArrowRight,
+  TrendingUp,
   Compass,
-  CheckCircle2,
-  ShieldCheck,
-  Search,
-  ExternalLink,
+  Layers,
+  Sparkles,
+  Clock,
   ChevronRight
 } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
-  const [district, setDistrict] = useState<District | null>(null);
-  const [stats, setStats] = useState<any>(null);
-  const [taluks, setTaluks] = useState<Taluk[]>([]);
-  const [surrounding, setSurrounding] = useState<SurroundingDistrict[]>([]);
-  const [featuredFacilities, setFeaturedFacilities] = useState<Facility[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [categories, setCategories] = useState<FacilityCategory[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedArea, setSelectedArea] = useState<Area | null>(null);
+  const [recentAreas, setRecentAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTaluk, setSelectedTaluk] = useState<Taluk | null>(null);
 
   const navigate = useNavigate();
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [distRes, talukRes, surrRes, facRes] = await Promise.all([
-          api.getDistrict(),
-          api.getTaluks(),
-          api.getSurroundingDistricts(),
-          api.getFacilities({ limit: 25 })
-        ]);
-
-        setDistrict(distRes.district);
-        setStats(distRes.stats);
-        setTaluks(talukRes.taluks);
-        setSurrounding(surrRes.surrounding);
-        setFeaturedFacilities(facRes.facilities);
-      } catch (err) {
-        console.error('Dashboard data load error:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
+    loadDashboardData();
+    loadRecentAreas();
   }, []);
 
-  const getCategoryCount = (catId: string) => {
-    if (!stats?.categories) return 0;
-    const cat = stats.categories.find((c: any) => c.id === catId);
-    return cat ? cat.count : 0;
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [areasRes, facilitiesRes, catRes] = await Promise.all([
+        api.getAreas(),
+        api.getFacilities({ limit: 100 }),
+        api.getCategories()
+      ]);
+
+      setAreas(areasRes.areas);
+      setFacilities(facilitiesRes.facilities);
+      setCategories(catRes.categories);
+      if (areasRes.areas.length > 0) {
+        setSelectedArea(areasRes.areas[0]);
+      }
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const loadRecentAreas = () => {
+    try {
+      const stored = localStorage.getItem('tumkur_recent_areas');
+      if (stored) {
+        setRecentAreas(JSON.parse(stored).slice(0, 4));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSelectArea = (area: Area) => {
+    setSelectedArea(area);
+    // Update recently explored areas in localStorage
+    try {
+      const stored = localStorage.getItem('tumkur_recent_areas');
+      let recents: Area[] = stored ? JSON.parse(stored) : [];
+      recents = [area, ...recents.filter(a => a.id !== area.id)].slice(0, 4);
+      localStorage.setItem('tumkur_recent_areas', JSON.stringify(recents));
+      setRecentAreas(recents);
+    } catch (e) {
+      console.error(e);
+    }
+    navigate(`/areas/${area.id}`);
+  };
+
+  // Aggregated dynamic statistics across all 8 categories
+  const totalAreas = areas.length;
+  const totalSchools = facilities.filter(f => f.category_id === 'schools').length;
+  const totalHospitals = facilities.filter(f => f.category_id === 'hospitals').length;
+  const totalProvisionStores = facilities.filter(f => f.category_id === 'provision_stores').length;
+  const totalMedicalStores = facilities.filter(f => f.category_id === 'medical_stores').length;
+  const totalPostOffices = facilities.filter(f => f.category_id === 'post_offices').length;
+  const totalLayouts = facilities.filter(f => f.category_id === 'residential_layouts').length;
+  const totalSites = facilities.filter(f => f.category_id === 'sites_and_land').length;
+
+  // Filtered areas for selection section
+  const filteredAreas = areas.filter(a =>
+    a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (a.pin_code && a.pin_code.includes(searchQuery))
+  );
+
   return (
-    <div className="space-y-8 pb-12 animate-fade-in">
-      {/* 1. Hero Welcome Section */}
-      <section className="relative rounded-3xl bg-gradient-to-br from-navy-900 via-navy-800 to-teal-900 text-white p-8 sm:p-12 overflow-hidden shadow-2xl border border-navy-700/80">
+    <div className="space-y-8 animate-fade-in">
+      {/* 1. Hero Welcome Header */}
+      <div className="relative bg-gradient-to-r from-navy-900 via-navy-900 to-navy-800 border border-navy-700 rounded-3xl p-6 sm:p-8 shadow-xl overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-brand-teal/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-teal/30 border border-brand-teal/40 text-brand-cyan text-xs font-bold uppercase tracking-wider mb-4">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            Karnataka Geographical Intelligence System
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-teal/20 border border-brand-teal/40 text-brand-cyan text-xs font-bold mb-3 uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Area-Wise Infrastructure & Planning</span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white mb-3">
-            WELCOME TO <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-cyan to-emerald-400">TUMAKURU</span>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
+            WELCOME TO TUMKUR
           </h1>
 
-          <p className="text-base sm:text-lg text-slate-300 font-medium leading-relaxed mb-8">
-            "Discover Tumakuru. Explore Every Taluk. Build a Smarter Tomorrow."
+          <p className="text-lg sm:text-xl font-medium text-slate-300 mt-2">
+            "Discover Tumkur, One Area at a Time."
           </p>
 
-          <div className="flex flex-wrap gap-4 items-center">
-            <Link
-              to="/district"
-              className="px-6 py-3.5 rounded-xl bg-brand-teal hover:bg-teal-600 text-white font-bold text-sm shadow-lg hover:shadow-teal-500/25 transition-all flex items-center gap-2 group"
-            >
-              <span>Explore Tumakuru District</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
+          <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+            Digitally explore Tumkur city locality by locality. Instantly understand what schools, hospitals, medical stores, provision shops, post offices, layouts, and sites are nearby.
+          </p>
 
+          {/* Quick Area Search Form */}
+          <div className="mt-6 flex flex-col sm:flex-row gap-2 max-w-xl">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search area (e.g., SS Puram, Batawadi, Mandipet)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-navy-950/80 border border-navy-600 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-teal"
+              />
+            </div>
             <Link
-              to="/facilities"
-              className="px-6 py-3.5 rounded-xl bg-navy-800/80 hover:bg-navy-700 text-slate-200 border border-slate-600/60 font-semibold text-sm transition-colors flex items-center gap-2"
+              to="/areas"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-teal to-brand-cyan text-white text-sm font-bold flex items-center justify-center gap-2 hover:opacity-95 shadow-md shadow-brand-teal/25 transition-all"
             >
-              <Layers className="w-4 h-4 text-brand-cyan" />
-              <span>Map Facilities</span>
-            </Link>
-
-            <Link
-              to="/planning"
-              className="px-6 py-3.5 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 text-brand-cyan border border-brand-cyan/30 font-semibold text-sm transition-colors flex items-center gap-2"
-            >
-              <Compass className="w-4 h-4" />
-              <span>Smart Planning & Gaps</span>
+              <span>Explore All Areas</span>
+              <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>
+      </div>
 
-        {/* Decorative Grid BG & Emblems */}
-        <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-10 pointer-events-none bg-[radial-gradient(#00ADB5_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="absolute -bottom-16 -right-16 w-80 h-80 rounded-full bg-brand-cyan/20 blur-3xl pointer-events-none" />
-      </section>
-
-      {/* 2. Eight Mandatory Dynamic Metric Cards */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">District Infrastructure Indicators</h2>
-            <p className="text-xs text-slate-500">Real verified municipal figures across all 10 administrative taluks</p>
-          </div>
-          <span className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-semibold flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Live Database Verified
-          </span>
+      {/* 2. Dynamic 8 Infrastructure Statistics Cards */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-brand-cyan" />
+            <span>Tumkur City Infrastructure Telemetry</span>
+          </h2>
+          <span className="text-xs text-slate-400">Real verified counts</span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Card 1: Tumakuru District Overview */}
-          <Link
-            to="/district"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-brand-teal transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">District Area</span>
-              <div className="w-8 h-8 rounded-lg bg-teal-50 text-brand-teal flex items-center justify-center">
-                <MapPin className="w-4 h-4" />
-              </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {/* Total Areas */}
+          <Link to="/areas" className="bg-navy-900 border border-navy-800 hover:border-brand-cyan/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Areas</span>
+              <MapPin className="w-3.5 h-3.5 text-brand-cyan group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-brand-teal transition-colors">
-              10,597 <span className="text-xs font-normal text-slate-600">km²</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              3rd largest district in Karnataka • 2.68M Pop
-            </div>
+            <div className="text-2xl font-black text-white">{totalAreas > 0 ? totalAreas : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">Tumkur City Localities</p>
           </Link>
 
-          {/* Card 2: Total Taluks */}
-          <Link
-            to="/taluks"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-brand-teal transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Total Taluks</span>
-              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Building2 className="w-4 h-4" />
-              </div>
+          {/* Total Schools */}
+          <Link to="/facilities?category_id=schools" className="bg-navy-900 border border-navy-800 hover:border-blue-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Schools</span>
+              <School className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">
-              10 <span className="text-xs font-normal text-slate-600">Administrative</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              Tumakuru, Tiptur, Gubbi, Kunigal, etc.
-            </div>
+            <div className="text-2xl font-black text-white">{totalSchools > 0 ? totalSchools : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">Colleges & Schools</p>
           </Link>
 
-          {/* Card 3: Major Areas & Settlements */}
-          <Link
-            to="/areas"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-brand-teal transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Major Areas</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Compass className="w-4 h-4" />
-              </div>
+          {/* Total Hospitals */}
+          <Link to="/facilities?category_id=hospitals" className="bg-navy-900 border border-navy-800 hover:border-red-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Hospitals</span>
+              <HeartPulse className="w-3.5 h-3.5 text-red-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-emerald-600 transition-colors">
-              {stats?.total_areas || 40}+ <span className="text-xs font-normal text-slate-600">Localities</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              Towns, industrial parks, and villages
-            </div>
+            <div className="text-2xl font-black text-white">{totalHospitals > 0 ? totalHospitals : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">Hospitals & Clinics</p>
           </Link>
 
-          {/* Card 4: Schools and Colleges */}
-          <Link
-            to="/facilities?category_id=schools_colleges"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-500 transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Schools & Colleges</span>
-              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <School className="w-4 h-4" />
-              </div>
+          {/* Total Provision Stores */}
+          <Link to="/facilities?category_id=provision_stores" className="bg-navy-900 border border-navy-800 hover:border-amber-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Provisions</span>
+              <ShoppingBasket className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">
-              {getCategoryCount('schools_colleges')} <span className="text-xs font-normal text-slate-600">Institutions</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              SIT, Tumkur Univ, SSIT, Gov Colleges
-            </div>
+            <div className="text-2xl font-black text-white">{totalProvisionStores > 0 ? totalProvisionStores : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">Grocery & Daily Needs</p>
           </Link>
 
-          {/* Card 5: Hospitals */}
-          <Link
-            to="/facilities?category_id=hospitals"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-red-500 transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Hospitals</span>
-              <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
-                <HeartPulse className="w-4 h-4" />
-              </div>
+          {/* Total Medical Stores */}
+          <Link to="/facilities?category_id=medical_stores" className="bg-navy-900 border border-navy-800 hover:border-emerald-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Medicals</span>
+              <Pill className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-red-600 transition-colors">
-              {getCategoryCount('hospitals')} <span className="text-xs font-normal text-slate-600">Centers</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              District Hospital, PHCs, CHCs, Multi-spec
-            </div>
+            <div className="text-2xl font-black text-white">{totalMedicalStores > 0 ? totalMedicalStores : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">Pharmacies & Chemists</p>
           </Link>
 
-          {/* Card 6: Post Offices */}
-          <Link
-            to="/facilities?category_id=post_offices"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-amber-500 transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Post Offices</span>
-              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-                <Mail className="w-4 h-4" />
-              </div>
+          {/* Total Post Offices */}
+          <Link to="/facilities?category_id=post_offices" className="bg-navy-900 border border-navy-800 hover:border-orange-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Post Offices</span>
+              <Mail className="w-3.5 h-3.5 text-orange-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-amber-600 transition-colors">
-              {getCategoryCount('post_offices')} <span className="text-xs font-normal text-slate-600">Offices</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              Tumakuru HPO, Sub-Offices with PIN codes
-            </div>
+            <div className="text-2xl font-black text-white">{totalPostOffices > 0 ? totalPostOffices : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">HPO & Sub-Offices</p>
           </Link>
 
-          {/* Card 7: Residential Layouts */}
-          <Link
-            to="/facilities?category_id=residential_layouts"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-emerald-500 transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Residential Layouts</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Home className="w-4 h-4" />
-              </div>
+          {/* Total Layouts */}
+          <Link to="/facilities?category_id=residential_layouts" className="bg-navy-900 border border-navy-800 hover:border-purple-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Layouts</span>
+              <Home className="w-3.5 h-3.5 text-purple-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-emerald-600 transition-colors">
-              {getCategoryCount('residential_layouts')} <span className="text-xs font-normal text-slate-600">Layouts</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              TUDA & KHB approved urban enclaves
-            </div>
+            <div className="text-2xl font-black text-white">{totalLayouts > 0 ? totalLayouts : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">TUDA & Housing</p>
           </Link>
 
-          {/* Card 8: Available Sites */}
-          <Link
-            to="/facilities?category_id=sites_land"
-            className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-md hover:border-purple-500 transition-all group"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Sites & Land</span>
-              <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-                <Layers className="w-4 h-4" />
-              </div>
+          {/* Total Sites */}
+          <Link to="/facilities?category_id=sites_and_land" className="bg-navy-900 border border-navy-800 hover:border-teal-500/50 p-3.5 rounded-2xl shadow-sm transition-all group">
+            <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase mb-1">
+              <span>Sites</span>
+              <Map className="w-3.5 h-3.5 text-teal-400 group-hover:scale-110 transition-transform" />
             </div>
-            <div className="text-2xl font-black text-slate-900 group-hover:text-purple-600 transition-colors">
-              {getCategoryCount('sites_land')} <span className="text-xs font-normal text-slate-600">Plots / Parks</span>
-            </div>
-            <div className="text-xs text-slate-600 mt-1 font-medium">
-              KIADB Vasanthanarasapura, Antharasanahalli
-            </div>
+            <div className="text-2xl font-black text-white">{totalSites > 0 ? totalSites : 'Collecting...'}</div>
+            <p className="text-[10px] text-slate-400 mt-0.5 truncate">Land & Plots</p>
           </Link>
         </div>
-      </section>
+      </div>
 
-      {/* 3. Interactive District Geospatial Map Section */}
-      <section className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+      {/* 3. Interactive Map of Tumkur City */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <span>Interactive Geographical Map of Tumakuru</span>
-              <span className="text-xs bg-brand-teal/10 text-brand-teal font-semibold px-2.5 py-0.5 rounded-full border border-brand-teal/20">
-                10 Taluks & Bordering Districts
-              </span>
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Click on any taluk centroid to zoom, or select facility markers to inspect verified operational details and get directions.
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Layers className="w-5 h-5 text-brand-cyan" />
+              <span>Interactive Map of Tumkur City</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Locality markers and facilities color-coded by category. Click any marker for detailed popup and routing.
             </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <Link
-              to="/facilities"
-              className="text-xs font-bold text-brand-teal hover:underline flex items-center gap-1"
-            >
-              <span>Explore All Facilities Map</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
+          <Link to="/facilities" className="text-xs font-semibold text-brand-cyan hover:underline flex items-center gap-1">
+            <span>Open Fullscreen Facility Explorer</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
 
         <TumakuruMap
-          facilities={featuredFacilities}
-          taluks={taluks}
-          surroundingDistricts={surrounding}
-          selectedTaluk={selectedTaluk}
-          onSelectTaluk={t => setSelectedTaluk(t)}
+          facilities={facilities}
+          areas={areas}
+          selectedArea={selectedArea}
           height="540px"
+          onSelectArea={(ar) => handleSelectArea(ar)}
+          onSelectFacility={(fac) => navigate(`/facilities?id=${fac.id}`)}
         />
+      </div>
 
-        {/* Bordering Districts Pill Strip */}
-        <div className="mt-4 pt-4 border-t border-slate-100">
-          <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-            <span className="font-bold text-slate-700">Surrounding Neighboring Districts:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {surrounding.map(sd => (
-                <span
-                  key={sd.id}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-[11px] border border-slate-200 transition-colors"
-                  title={`${sd.name} (${sd.direction}) - ${sd.distance_km} km`}
-                >
-                  📍 {sd.name} ({sd.direction})
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. Ten Taluks Quick Navigation Grid */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Explore the 10 Taluks of Tumakuru</h3>
-            <p className="text-xs text-slate-500">Select any taluk to inspect settlements, local areas, and facilities</p>
-          </div>
-          <Link to="/taluks" className="text-xs font-bold text-brand-teal hover:underline flex items-center gap-1">
-            <span>View All Taluks</span>
-            <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3.5">
-          {taluks.map(t => (
-            <div
-              key={t.id}
-              onClick={() => navigate(`/taluks/${t.id}`)}
-              className="p-4 rounded-2xl bg-white border border-slate-200 hover:border-brand-teal hover:shadow-md cursor-pointer transition-all group"
+      {/* 4. Category Shortcuts */}
+      <div className="bg-navy-900 border border-navy-800 rounded-3xl p-6 shadow-sm">
+        <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4">
+          Facility Category Shortcuts
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {categories.map((c) => (
+            <Link
+              key={c.id}
+              to={`/facilities?category_id=${c.id}`}
+              className="flex flex-col items-center justify-center p-3 rounded-2xl bg-navy-800/60 hover:bg-navy-800 border border-navy-700 hover:border-brand-cyan/40 transition-all text-center group"
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <h4 className="font-bold text-sm text-slate-900 group-hover:text-brand-teal transition-colors">
-                  {t.name.replace(' Taluk', '')}
-                </h4>
-                <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-brand-teal transition-colors" />
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white mb-2 shadow group-hover:scale-110 transition-transform"
+                style={{ backgroundColor: c.color }}
+              >
+                {c.id === 'schools' && <School className="w-5 h-5" />}
+                {c.id === 'hospitals' && <HeartPulse className="w-5 h-5" />}
+                {c.id === 'provision_stores' && <ShoppingBasket className="w-5 h-5" />}
+                {c.id === 'medical_stores' && <Pill className="w-5 h-5" />}
+                {c.id === 'post_offices' && <Mail className="w-5 h-5" />}
+                {c.id === 'residential_layouts' && <Home className="w-5 h-5" />}
+                {c.id === 'sites_and_land' && <Map className="w-5 h-5" />}
+                {c.id === 'other_facilities' && <Building2 className="w-5 h-5" />}
               </div>
-              <p className="text-xs text-slate-500">HQ: {t.headquarters}</p>
-              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
-                <span>{t.areas_count || 5} Localities</span>
-                <span className="font-semibold text-brand-teal group-hover:translate-x-0.5 transition-transform inline-flex items-center">
-                  Explore →
-                </span>
+              <span className="text-xs font-bold text-white group-hover:text-brand-cyan transition-colors leading-tight">
+                {c.name}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-1 font-mono">
+                {c.count ?? 0} mapped
+              </span>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* 5. Recently Explored Areas (if any) */}
+      {recentAreas.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+            <Clock className="w-4 h-4 text-brand-cyan" />
+            <span>Recently Explored Areas</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {recentAreas.map((ar) => (
+              <div
+                key={ar.id}
+                onClick={() => handleSelectArea(ar)}
+                className="bg-navy-900 border border-navy-800 hover:border-navy-600 p-3.5 rounded-2xl cursor-pointer transition-all flex items-center justify-between group"
+              >
+                <div>
+                  <h4 className="text-sm font-bold text-white group-hover:text-brand-cyan transition-colors">{ar.name}</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{ar.facilities_count ?? 0} facilities mapped</p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-brand-cyan group-hover:translate-x-1 transition-all" />
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Area Selection Grid Section (Matching Section 5 & 6) */}
+      <div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-brand-cyan" />
+              <span>Tumkur City Localities & Neighborhoods</span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              Select any area to view full facility directory, distance radar, and infrastructure analysis.
+            </p>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">
+            Showing {filteredAreas.length} of {areas.length} City Areas
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredAreas.map((area) => (
+            <div
+              key={area.id}
+              className="bg-navy-900 border border-navy-800 hover:border-brand-teal/60 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all flex flex-col justify-between group"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-xs font-bold text-brand-cyan flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>PIN: {area.pin_code || '572101'}</span>
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-navy-800 text-slate-300">
+                    ~{(area.population || 18000).toLocaleString()} residents
+                  </span>
+                </div>
+
+                <h3 className="text-lg font-extrabold text-white group-hover:text-brand-cyan transition-colors">
+                  {area.name}
+                </h3>
+
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                  {area.description || 'Tumkur City locality with residential and commercial facilities.'}
+                </p>
+
+                {/* Facility Counts Badges (Schools, Hospitals, Medical Stores, Shops) */}
+                <div className="grid grid-cols-4 gap-2 mt-4 pt-3 border-t border-navy-800/80 text-center text-xs">
+                  <div className="bg-navy-800/60 rounded-xl p-2">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Schools</span>
+                    <span className="font-bold text-blue-400">{area.schools_count ?? 0}</span>
+                  </div>
+                  <div className="bg-navy-800/60 rounded-xl p-2">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Hospitals</span>
+                    <span className="font-bold text-red-400">{area.hospitals_count ?? 0}</span>
+                  </div>
+                  <div className="bg-navy-800/60 rounded-xl p-2">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Medicals</span>
+                    <span className="font-bold text-emerald-400">{area.medical_stores_count ?? 0}</span>
+                  </div>
+                  <div className="bg-navy-800/60 rounded-xl p-2">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Shops</span>
+                    <span className="font-bold text-amber-400">{(area.provision_stores_count ?? 0) + (area.other_count ?? 0)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <button
+                onClick={() => handleSelectArea(area)}
+                className="mt-4 w-full py-2.5 rounded-xl bg-navy-800 hover:bg-brand-teal text-slate-200 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                <span>Explore Area</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           ))}
         </div>
-      </section>
+      </div>
+
+      {/* 7. Smart City Planning Highlight Banner */}
+      <div className="bg-gradient-to-r from-teal-950/80 to-navy-900 border border-teal-500/30 rounded-3xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+        <div className="max-w-2xl">
+          <div className="flex items-center gap-2 text-brand-cyan text-xs font-bold uppercase tracking-wider mb-2">
+            <Compass className="w-4 h-4" />
+            <span>Infrastructure Deficit & Gap Detection</span>
+          </div>
+          <h3 className="text-xl sm:text-2xl font-black text-white">
+            Smart City Urban Planning & Coverage Analysis
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
+            Automated spatial analysis detects areas with lack of healthcare access, pharmacy outreach deficits, and educational needs. Review proposed capital projects or submit a community development proposal.
+          </p>
+          <p className="text-[11px] text-slate-400 mt-2 italic">
+            * Preliminary analysis based on available mapped data. This does not confirm the absence of facilities.
+          </p>
+        </div>
+
+        <Link
+          to="/planning"
+          className="shrink-0 px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-teal to-brand-cyan text-white font-bold text-sm shadow-lg shadow-brand-teal/30 hover:opacity-95 transition-all flex items-center gap-2"
+        >
+          <span>Open Planning Board</span>
+          <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
     </div>
   );
 };

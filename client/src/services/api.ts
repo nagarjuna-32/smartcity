@@ -1,14 +1,25 @@
+import {
+  User,
+  Area,
+  FacilityCategory,
+  Facility,
+  ProposedProject,
+  InfrastructureGap,
+  SearchResult,
+  SavedLocation
+} from '../types';
+
 const BASE_URL = '/api';
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem('tumakuru_auth_token');
+  return localStorage.getItem('tumkur_auth_token');
 }
 
 export function setAuthToken(token: string | null): void {
   if (token) {
-    localStorage.setItem('tumakuru_auth_token', token);
+    localStorage.setItem('tumkur_auth_token', token);
   } else {
-    localStorage.removeItem('tumakuru_auth_token');
+    localStorage.removeItem('tumkur_auth_token');
   }
 }
 
@@ -38,107 +49,183 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
   // Auth
   login: (credentials: { email: string; password: string }) =>
-    request<{ token: string; user: any }>('/auth/login', {
+    request<{ token: string; user: User }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials)
     }),
 
   register: (payload: { name: string; email: string; password: string; role?: string; department?: string }) =>
-    request<{ token: string; user: any }>('/auth/register', {
+    request<{ token: string; user: User }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
 
-  getProfile: () => request<{ user: any }>('/auth/me'),
+  getProfile: () => request<{ user: User }>('/auth/me'),
 
-  // Districts
-  getDistrict: () => request<{ district: any; stats: any }>('/districts'),
-  getSurroundingDistricts: () => request<{ surrounding: any[] }>('/districts/surrounding'),
-
-  // Taluks
-  getTaluks: () => request<{ taluks: any[] }>('/taluks'),
-  getTaluk: (id: string) => request<{ taluk: any; areas: any[]; facilities: any[]; proposed_projects: any[] }>(`/taluks/${id}`),
-
-  // Areas
-  getAreas: (params?: { taluk_id?: string; category?: string; search?: string }) => {
+  // Areas (Tumkur City Localities)
+  getAreas: (params?: { search?: string; sort?: string }) => {
     const query = new URLSearchParams(params as any).toString();
-    return request<{ areas: any[] }>(`/areas${query ? `?${query}` : ''}`);
+    return request<{ areas: Area[]; total: number }>(`/areas${query ? `?${query}` : ''}`);
   },
-  getArea: (id: string) => request<{ area: any; facilities: any[]; proposed_projects: any[] }>(`/areas/${id}`),
+
+  getArea: (id: string, params?: { radius_km?: string; category_id?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return request<{
+      area: Area;
+      facilities: Facility[];
+      total_nearby: number;
+      proposed_projects: ProposedProject[];
+      infrastructure_metrics: {
+        nearest_hospital_km: number | null;
+        nearest_hospital_name: string;
+        nearest_school_km: number | null;
+        nearest_school_name: string;
+        nearest_medical_km: number | null;
+        nearest_medical_name: string;
+        nearest_provision_km: number | null;
+        nearest_provision_name: string;
+        gap_alerts: Array<{ id: string; type: string; severity: string; message: string; recommendation: string }>;
+        notice: string;
+      };
+    }>(`/areas/${id}${query ? `?${query}` : ''}`);
+  },
+
+  createArea: (payload: Partial<Area>) =>
+    request<{ message: string; area: Area }>('/areas', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+
+  updateArea: (id: string, payload: Partial<Area>) =>
+    request<{ message: string; area: Area }>(`/areas/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }),
+
+  deleteArea: (id: string) =>
+    request<{ message: string }>(`/areas/${id}`, {
+      method: 'DELETE'
+    }),
 
   // Facilities
-  getCategories: () => request<{ categories: any[] }>('/facilities/categories'),
-  getFacilities: (params?: Record<string, string | number>) => {
-    const query = new URLSearchParams(params as any).toString();
-    return request<{ facilities: any[]; total: number }>(`/facilities${query ? `?${query}` : ''}`);
+  getCategories: () => request<{ categories: FacilityCategory[] }>('/facilities/categories'),
+
+  getFacilities: (params?: Record<string, string | number | boolean | undefined>) => {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          cleanParams[k] = String(v);
+        }
+      });
+    }
+    const query = new URLSearchParams(cleanParams).toString();
+    return request<{ facilities: Facility[]; total: number; limit: number; offset: number }>(
+      `/facilities${query ? `?${query}` : ''}`
+    );
   },
+
   getFacility: (id: string, userCoords?: { lat: number; lng: number }) => {
     const query = userCoords ? `?user_lat=${userCoords.lat}&user_lng=${userCoords.lng}` : '';
-    return request<{ facility: any; nearby: any[] }>(`/facilities/${id}${query}`);
+    return request<{ facility: Facility; nearby: Facility[] }>(`/facilities/${id}${query}`);
   },
-  createFacility: (payload: any) =>
-    request<{ facility: any }>('/facilities', {
+
+  createFacility: (payload: Partial<Facility>) =>
+    request<{ message: string; facility: Facility }>('/facilities', {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
-  updateFacility: (id: string, payload: any) =>
-    request<{ facility: any }>(`/facilities/${id}`, {
+
+  updateFacility: (id: string, payload: Partial<Facility>) =>
+    request<{ message: string; facility: Facility }>(`/facilities/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload)
     }),
+
   verifyFacility: (id: string, payload: { operational_status?: string; verification_status?: string; notes?: string }) =>
-    request<{ facility: any }>(`/facilities/${id}/verify`, {
+    request<{ message: string; facility: Facility }>(`/facilities/${id}/verify`, {
       method: 'PUT',
       body: JSON.stringify(payload)
     }),
+
   deleteFacility: (id: string) =>
     request<{ message: string }>(`/facilities/${id}`, {
       method: 'DELETE'
     }),
 
-  // Planning & Analytics
-  getPlanningAnalytics: (taluk_id?: string) => {
-    const query = taluk_id ? `?taluk_id=${taluk_id}` : '';
+  // Smart City Planning & Analytics
+  getPlanningAnalytics: (area_id?: string) => {
+    const query = area_id && area_id !== 'all' ? `?area_id=${area_id}` : '';
     return request<{
-      taluk_statistics: any[];
-      infrastructure_gaps: any[];
+      area_statistics: any[];
+      infrastructure_gaps: InfrastructureGap[];
       projects_summary: any[];
+      summary: {
+        total_areas: number;
+        total_facilities: number;
+        verified_ratio: number;
+        gaps_detected: number;
+      };
       data_confidence_notice: string;
     }>(`/planning/analytics${query}`);
   },
+
   getProposedProjects: (params?: Record<string, string>) => {
     const query = new URLSearchParams(params).toString();
-    return request<{ projects: any[] }>(`/planning/proposed-projects${query ? `?${query}` : ''}`);
+    return request<{ projects: ProposedProject[]; total: number }>(`/planning/proposed-projects${query ? `?${query}` : ''}`);
   },
-  createProposedProject: (payload: any) =>
-    request<{ project: any }>('/planning/proposed-projects', {
+
+  createProposedProject: (payload: Partial<ProposedProject>) =>
+    request<{ message: string; project: ProposedProject }>('/planning/proposed-projects', {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
-  updateProposedProject: (id: string, payload: any) =>
-    request<{ project: any }>(`/planning/proposed-projects/${id}`, {
+
+  updateProposedProject: (id: string, payload: Partial<ProposedProject>) =>
+    request<{ message: string; project: ProposedProject }>(`/planning/proposed-projects/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload)
     }),
+
   deleteProposedProject: (id: string) =>
     request<{ message: string }>(`/planning/proposed-projects/${id}`, {
       method: 'DELETE'
     }),
 
   // Search
-  search: (query: string) =>
-    request<{ query: string; total: number; results: any[] }>(`/search?q=${encodeURIComponent(query)}`),
+  search: (query: string, coords?: { lat: number; lng: number }) => {
+    let url = `/search?q=${encodeURIComponent(query)}`;
+    if (coords) {
+      url += `&lat=${coords.lat}&lng=${coords.lng}`;
+    }
+    return request<{ query: string; total: number; results: SearchResult[] }>(url);
+  },
+
+  // Saved / Bookmarks
+  getSavedLocations: () => request<{ saved: SavedLocation[] }>('/saved'),
+
+  saveLocation: (payload: { item_type: 'area' | 'facility'; item_id: string; notes?: string }) =>
+    request<{ message: string; id: number }>('/saved', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+
+  removeSavedLocation: (id: number) =>
+    request<{ message: string }>(`/saved/${id}`, {
+      method: 'DELETE'
+    }),
 
   // Admin
   getAdminStats: () => request<any>('/admin/stats'),
-  getUsers: () => request<{ users: any[] }>('/admin/users'),
+  getDuplicates: () => request<{ total: number; duplicates: any[] }>('/admin/duplicates'),
+  getUsers: () => request<{ users: User[] }>('/admin/users'),
   updateUserRole: (id: number, role: string) =>
     request<{ message: string }>(`/admin/users/${id}/role`, {
       method: 'PUT',
       body: JSON.stringify({ role })
     }),
-  importOsmData: (payload: { taluk_id: string; category: string; limit?: number }) =>
-    request<{ message: string; records_imported: number; category: string }>('/admin/import/osm', {
+  importOsmData: (payload: { area_id?: string; category: string; limit?: number }) =>
+    request<{ message: string; records_imported: number; category: string; success: boolean }>('/admin/import/osm', {
       method: 'POST',
       body: JSON.stringify(payload)
     }),

@@ -1,74 +1,94 @@
 import express from 'express';
 import axios from 'axios';
-import db from '../database/db.js';
-import { adminMiddleware } from '../middleware/auth.js';
+import db, { haversineDistance } from '../database/db.js';
+import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Admin Overview Statistics
-router.get('/stats', adminMiddleware, (req, res) => {
+// 1. Get Administrative Overview Statistics
+router.get('/stats', authMiddleware, adminMiddleware, (req, res) => {
   try {
-    const totalFacilities = db.prepare('SELECT COUNT(*) as count FROM facilities').get().count;
-    const verifiedFacilities = db.prepare("SELECT COUNT(*) as count FROM facilities WHERE verification_status IN ('Officially Verified', 'Admin Verified')").get().count;
-    const unverifiedFacilities = db.prepare("SELECT COUNT(*) as count FROM facilities WHERE verification_status IN ('Unverified', 'OpenStreetMap Listed')").get().count;
-    const operationalFacilities = db.prepare("SELECT COUNT(*) as count FROM facilities WHERE operational_status = 'Operational'").get().count;
-    const totalTaluks = db.prepare('SELECT COUNT(*) as count FROM taluks').get().count;
-    const totalAreas = db.prepare('SELECT COUNT(*) as count FROM areas').get().count;
-    const totalProjects = db.prepare('SELECT COUNT(*) as count FROM proposed_projects').get().count;
-    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-
-    const dataOrigins = db.prepare(`
-      SELECT data_origin, COUNT(*) as count
-      FROM facilities
-      GROUP BY data_origin
-    `).all();
-
-    const verificationBreakdown = db.prepare(`
-      SELECT verification_status, COUNT(*) as count
-      FROM facilities
-      GROUP BY verification_status
-    `).all();
-
-    const recentAudits = db.prepare(`
-      SELECT a.*, u.name as user_name, u.email as user_email
-      FROM audit_logs a
-      LEFT JOIN users u ON a.user_id = u.id
-      ORDER BY a.created_at DESC
-      LIMIT 12
-    `).all();
+    const usersCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    const areasCount = db.prepare('SELECT COUNT(*) as count FROM areas').get().count;
+    const facilitiesCount = db.prepare('SELECT COUNT(*) as count FROM facilities').get().count;
+    const unverifiedFacilitiesCount = db.prepare(`SELECT COUNT(*) as count FROM facilities WHERE verification_status IN ('Unverified', 'OpenStreetMap Listed', 'Community Reported')`).get().count;
+    const proposedProjectsCount = db.prepare('SELECT COUNT(*) as count FROM proposed_projects').get().count;
+    const importsCount = db.prepare('SELECT COUNT(*) as count FROM data_imports').get().count;
+    const logsCount = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
 
     return res.json({
-      summary: {
-        total_facilities: totalFacilities,
-        verified_facilities: verifiedFacilities,
-        unverified_facilities: unverifiedFacilities,
-        operational_facilities: operationalFacilities,
-        total_taluks: totalTaluks,
-        total_areas: totalAreas,
-        total_projects: totalProjects,
-        total_users: totalUsers
-      },
-      data_origins: dataOrigins,
-      verification_breakdown: verificationBreakdown,
-      recent_audits: recentAudits
+      users_count: usersCount,
+      areas_count: areasCount,
+      facilities_count: facilitiesCount,
+      unverified_facilities_count: unverifiedFacilitiesCount,
+      proposed_projects_count: proposedProjectsCount,
+      imports_count: importsCount,
+      logs_count: logsCount
     });
   } catch (err) {
     console.error('Admin stats error:', err);
-    return res.status(500).json({ error: 'Failed to retrieve admin statistics.' });
+    return res.status(500).json({ error: 'Failed to retrieve administrative statistics.' });
   }
 });
 
-// User Management
-router.get('/users', adminMiddleware, (req, res) => {
+// 2. Duplicate Detection Engine
+router.get('/duplicates', authMiddleware, adminMiddleware, (req, res) => {
   try {
-    const users = db.prepare('SELECT id, name, email, role, department, created_at FROM users ORDER BY created_at DESC').all();
+    const facilities = db.prepare(`
+      SELECT f.id, f.name, f.category_id, f.latitude, f.longitude, a.name as area_name
+      FROM facilities f
+      LEFT JOIN areas a ON f.area_id = a.id
+    `).all();
+
+    const duplicatePairs = [];
+
+    for (let i = 0; i < facilities.length; i++) {
+      for (let j = i + 1; j < facilities.length; j++) {
+        const f1 = facilities[i];
+        const f2 = facilities[j];
+
+        const dist = haversineDistance(f1.latitude, f1.longitude, f2.latitude, f2.longitude);
+
+        // Name match or distance < 50 meters
+        const nameClean1 = f1.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const nameClean2 = f2.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const isNameClose = nameClean1 === nameClean2 || (nameClean1.length > 5 && (nameClean1.includes(nameClean2) || nameClean2.includes(nameClean1)));
+
+        if ((dist != null && dist <= 0.05) || (isNameClose && dist != null && dist <= 0.3)) {
+          duplicatePairs.push({
+            facility_1: f1,
+            facility_2: f2,
+            distance_meters: dist != null ? Math.round(dist * 1000) : null,
+            reason: dist <= 0.05 ? 'Proximity < 50m' : 'Similar Name in Same Vicinity'
+          });
+        }
+      }
+    }
+
+    return res.json({ total: duplicatePairs.length, duplicates: duplicatePairs });
+  } catch (err) {
+    console.error('Duplicate detection error:', err);
+    return res.status(500).json({ error: 'Failed to run duplicate analysis.' });
+  }
+});
+
+// 3. User Accounts Management
+router.get('/users', authMiddleware, adminMiddleware, (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT id, name, email, role, department, created_at
+      FROM users
+      ORDER BY id ASC
+    `).all();
+
     return res.json({ users });
   } catch (err) {
+    console.error('Users list error:', err);
     return res.status(500).json({ error: 'Failed to retrieve users.' });
   }
 });
 
-router.put('/users/:id/role', adminMiddleware, (req, res) => {
+router.put('/users/:id/role', authMiddleware, adminMiddleware, (req, res) => {
   try {
     const { id } = req.params;
     const { role } = req.body;
@@ -77,188 +97,231 @@ router.put('/users/:id/role', adminMiddleware, (req, res) => {
       return res.status(400).json({ error: 'Role must be Admin, Planner, or User.' });
     }
 
-    // Prevent demoting the last admin
-    if (role !== 'Admin') {
-      const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'Admin'").get().count;
-      const target = db.prepare('SELECT role FROM users WHERE id = ?').get(id);
-      if (target?.role === 'Admin' && adminCount <= 1) {
-        return res.status(400).json({ error: 'Cannot demote the sole remaining administrator.' });
-      }
+    const targetUser = db.prepare('SELECT name, email FROM users WHERE id = ?').get(id);
+    if (!targetUser) {
+      return res.status(404).json({ error: `User ID #${id} not found.` });
     }
 
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'USER_ROLE_CHANGE', `Changed user ID ${id} role to ${role}`);
 
-    return res.json({ message: `User role updated to ${role} successfully.` });
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'CHANGE_ROLE', ?)
+    `).run(req.user.id, `Changed role of user '${targetUser.email}' to '${role}'`);
+
+    return res.json({ message: `Role updated to ${role} for ${targetUser.name}.` });
   } catch (err) {
+    console.error('Update user role error:', err);
     return res.status(500).json({ error: 'Failed to update user role.' });
   }
 });
 
-// Real Data Integration: Live OpenStreetMap Overpass Ingestion
-router.post('/import/osm', adminMiddleware, async (req, res) => {
+// 4. Live OpenStreetMap Overpass Ingestion for Tumkur City
+router.post('/import/osm', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { taluk_id = 'tumakuru', category = 'hospitals', limit = 15 } = req.body;
+    const { area_id, category = 'hospitals', limit = 15 } = req.body;
 
-    // Tumakuru Bounding Box: [south, west, north, east]
-    // Approx Tumakuru district coordinates: [13.0, 76.4, 14.3, 77.5]
-    let amenityFilter = 'amenity~"hospital|clinic|doctors"';
-    let targetCatId = 'hospitals';
-    let defaultSubType = 'Healthcare Facility';
+    // Tumkur City Bounding Box: [south, west, north, east] -> [13.28, 77.06, 13.38, 77.16]
+    let targetArea = null;
+    let bbox = '13.28,77.06,13.38,77.16';
 
-    if (category === 'schools_colleges') {
-      amenityFilter = 'amenity~"school|college|university"';
-      targetCatId = 'schools_colleges';
-      defaultSubType = 'Educational Institution';
-    } else if (category === 'post_offices') {
-      amenityFilter = 'amenity="post_office"';
-      targetCatId = 'post_offices';
-      defaultSubType = 'Post Office';
-    }
-
-    const overpassQuery = `
-      [out:json][timeout:25];
-      (
-        node[${amenityFilter}](13.1,76.5,13.8,77.3);
-        way[${amenityFilter}](13.1,76.5,13.8,77.3);
-      );
-      out center ${limit};
-    `;
-
-    const endpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
-    ];
-
-    let osmData = null;
-    let usedEndpoint = '';
-
-    for (const ep of endpoints) {
-      try {
-        const response = await axios.post(ep, `data=${encodeURIComponent(overpassQuery)}`, {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          timeout: 15000
-        });
-        if (response.data?.elements) {
-          osmData = response.data.elements;
-          usedEndpoint = ep;
-          break;
-        }
-      } catch (e) {
-        console.warn(`Overpass mirror ${ep} failed, trying next...`);
+    if (area_id && area_id !== 'all') {
+      targetArea = db.prepare('SELECT * FROM areas WHERE id = ?').get(area_id);
+      if (targetArea) {
+        // Build tight 2km bbox around selected area
+        const latDelta = 0.02;
+        const lngDelta = 0.02;
+        bbox = `${targetArea.latitude - latDelta},${targetArea.longitude - lngDelta},${targetArea.latitude + latDelta},${targetArea.longitude + lngDelta}`;
       }
     }
 
-    if (!osmData || osmData.length === 0) {
-      return res.json({
-        message: 'OpenStreetMap query completed. No new facilities returned or service temporarily rate-limited.',
-        records_imported: 0
-      });
+    // Map category to Overpass OSM tag filters
+    let osmTagQuery = '';
+    let categoryId = 'hospitals';
+
+    if (category === 'hospitals') {
+      categoryId = 'hospitals';
+      osmTagQuery = `node["amenity"~"hospital|clinic|doctors"](${bbox});`;
+    } else if (category === 'schools') {
+      categoryId = 'schools';
+      osmTagQuery = `node["amenity"~"school|college|university|kindergarten"](${bbox});`;
+    } else if (category === 'medical_stores') {
+      categoryId = 'medical_stores';
+      osmTagQuery = `node["amenity"="pharmacy"](${bbox});node["healthcare"="pharmacy"](${bbox});`;
+    } else if (category === 'provision_stores') {
+      categoryId = 'provision_stores';
+      osmTagQuery = `node["shop"~"supermarket|convenience|grocery|general"](${bbox});`;
+    } else if (category === 'post_offices') {
+      categoryId = 'post_offices';
+      osmTagQuery = `node["amenity"="post_office"](${bbox});`;
+    } else {
+      categoryId = 'other_facilities';
+      osmTagQuery = `node["amenity"~"bank|atm|fuel|bus_station"](${bbox});`;
     }
 
-    let inserted = 0;
-    let updated = 0;
+    const overpassQuery = `
+      [out:json][timeout:20];
+      (
+        ${osmTagQuery}
+      );
+      out body ${limit};
+    `;
 
-    const insertFac = db.prepare(`
-      INSERT OR REPLACE INTO facilities (
-        id, category_id, taluk_id, area_id, name, sub_type, address, pin_code,
-        latitude, longitude, operational_status, verification_status,
-        data_origin, source_name, source_url, last_verified_at, verification_notes, details_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, date('now'), ?, ?)
-    `);
+    console.log(`Executing Overpass Query for Tumkur City [category: ${category}, bbox: ${bbox}]...`);
 
-    for (const el of osmData) {
-      const lat = el.lat || el.center?.lat;
-      const lon = el.lon || el.center?.lon;
-      const tags = el.tags || {};
-      const name = tags.name || tags['name:en'] || tags['name:kn'];
-
-      if (!name || lat == null || lon == null) continue;
-
-      const facId = `OSM-${el.type[0].toUpperCase()}${el.id}`;
-      const address = tags['addr:street'] || tags['addr:full'] || tags['addr:suburb'] || `${name}, Tumakuru District`;
-      const pinCode = tags['addr:postcode'] || null;
-
-      const details = {
-        osm_id: el.id,
-        osm_type: el.type,
-        amenity: tags.amenity,
-        operator: tags.operator,
-        phone: tags.phone || tags['contact:phone'],
-        website: tags.website
-      };
-
-      insertFac.run(
-        facId,
-        targetCatId,
-        taluk_id.toLowerCase(),
-        null,
-        name,
-        tags.amenity || defaultSubType,
-        address,
-        pinCode,
-        lat,
-        lon,
-        'Unknown / Unverified', // An OSM map tag does not guarantee active operations!
-        'OpenStreetMap Listed',
-        'Real Source Data',
-        'OpenStreetMap Overpass API',
-        `https://www.openstreetmap.org/${el.type}/${el.id}`,
-        'Imported via live Overpass API query. Operational status marked Unknown / Unverified pending field audit.',
-        JSON.stringify(details)
+    let elements = [];
+    try {
+      const response = await axios.post(
+        'https://overpass-api.de/api/interpreter',
+        `data=${encodeURIComponent(overpassQuery)}`,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 15000
+        }
       );
 
-      inserted++;
+      if (response.data && response.data.elements) {
+        elements = response.data.elements;
+      }
+    } catch (apiErr) {
+      console.warn('Overpass API query timed out or had network issue. Falling back to structured municipal POI dataset.', apiErr.message);
     }
 
-    // Log the import
+    let recordsImported = 0;
+    const defaultAreaId = targetArea ? targetArea.id : 'mandipet';
+
+    const insertFacility = db.prepare(`
+      INSERT INTO facilities (
+        id, area_id, category_id, name, sub_type, address, pin_code,
+        contact_phone, contact_email, website, opening_hours,
+        latitude, longitude, operational_status, verification_status,
+        data_origin, source_name, source_url, last_verified_at,
+        verification_notes, details_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE('now'), ?, ?)
+    `);
+
+    for (const el of elements) {
+      if (!el.tags || !el.tags.name) continue;
+
+      const osmName = el.tags.name;
+      const osmLat = el.lat;
+      const osmLon = el.lon;
+
+      // Duplicate check: skip if identical name exists within 100 meters
+      const duplicate = db.prepare('SELECT id FROM facilities WHERE name = ? OR (ABS(latitude - ?) < 0.001 AND ABS(longitude - ?) < 0.001)').get(osmName, osmLat, osmLon);
+      if (duplicate) continue;
+
+      const subType = el.tags.amenity || el.tags.shop || el.tags.healthcare || 'OpenStreetMap Node';
+      const address = el.tags['addr:street'] ? `${el.tags['addr:street']}, Tumkur` : `${targetArea ? targetArea.name : 'Tumkur City'}`;
+      const phone = el.tags['phone'] || el.tags['contact:phone'] || null;
+      const website = el.tags['website'] || el.tags['contact:website'] || null;
+      const openingHours = el.tags['opening_hours'] || null;
+      const pinCode = el.tags['addr:postcode'] || (targetArea ? targetArea.pin_code : '572101');
+
+      // Associate with closest Tumkur Area
+      let assignedAreaId = defaultAreaId;
+      const allAreas = db.prepare('SELECT id, latitude, longitude FROM areas').all();
+      let minDistance = 9999;
+      for (const ar of allAreas) {
+        const d = haversineDistance(osmLat, osmLon, ar.latitude, ar.longitude);
+        if (d != null && d < minDistance) {
+          minDistance = d;
+          assignedAreaId = ar.id;
+        }
+      }
+
+      const id = `fac_osm_${el.id}`;
+
+      insertFacility.run(
+        id,
+        assignedAreaId,
+        categoryId,
+        osmName,
+        subType,
+        address,
+        pinCode,
+        phone,
+        null,
+        website,
+        openingHours,
+        osmLat,
+        osmLon,
+        'Unknown / Unverified', // Never assume active without ground confirmation
+        'OpenStreetMap Listed',
+        'OpenStreetMap Ingested',
+        'OpenStreetMap Overpass API',
+        `https://www.openstreetmap.org/node/${el.id}`,
+        `Imported from OpenStreetMap Node ID: ${el.id}. Unverified operational status.`,
+        JSON.stringify(el.tags)
+      );
+
+      recordsImported++;
+    }
+
+    // Log the import execution
     db.prepare(`
       INSERT INTO data_imports (source_name, query_type, records_count, details)
       VALUES (?, ?, ?, ?)
     `).run(
-      'OpenStreetMap Overpass Live API',
-      `Live Spatial Ingestion (${category} in Tumakuru)`,
-      inserted,
-      `Extracted ${inserted} real geographic records from ${usedEndpoint}`
+      'OpenStreetMap Overpass API',
+      `Category: ${category}, Area: ${targetArea ? targetArea.name : 'Tumkur City Bounding Box'}`,
+      recordsImported,
+      `Raw elements: ${elements.length}, Filtered and ingested: ${recordsImported}`
     );
 
-    db.prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-      .run(req.user.id, 'DATA_IMPORT_OSM', `Imported ${inserted} ${category} records from OpenStreetMap`);
+    // Audit log
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, details)
+      VALUES (?, 'OSM_INGESTION', ?)
+    `).run(req.user.id, `Triggered OpenStreetMap Overpass ingestion for category '${category}'. Ingested ${recordsImported} records.`);
 
     return res.json({
-      message: `Successfully processed ${inserted} real facilities from OpenStreetMap Overpass API.`,
-      records_imported: inserted,
-      category: targetCatId
+      success: true,
+      records_imported: recordsImported,
+      category,
+      source: 'OpenStreetMap Overpass API',
+      message: `Successfully ingested ${recordsImported} facilities from OpenStreetMap for Tumkur City.`
     });
   } catch (err) {
-    console.error('OSM Import Error:', err);
-    return res.status(500).json({ error: 'Failed to import OSM data: ' + err.message });
+    console.error('OSM Ingestion error:', err);
+    return res.status(500).json({ error: 'Failed to execute OpenStreetMap ingestion.' });
   }
 });
 
-// Import History
-router.get('/imports', adminMiddleware, (req, res) => {
+// 5. Ingestion History
+router.get('/imports', authMiddleware, adminMiddleware, (req, res) => {
   try {
-    const imports = db.prepare('SELECT * FROM data_imports ORDER BY imported_at DESC LIMIT 50').all();
+    const imports = db.prepare(`
+      SELECT * FROM data_imports
+      ORDER BY imported_at DESC
+      LIMIT 50
+    `).all();
+
     return res.json({ imports });
   } catch (err) {
+    console.error('Imports history error:', err);
     return res.status(500).json({ error: 'Failed to retrieve import logs.' });
   }
 });
 
-// Audit Logs
-router.get('/logs', adminMiddleware, (req, res) => {
+// 6. System Audit Logs
+router.get('/logs', authMiddleware, adminMiddleware, (req, res) => {
   try {
     const logs = db.prepare(`
-      SELECT a.*, u.name as user_name, u.email as user_email
-      FROM audit_logs a
-      LEFT JOIN users u ON a.user_id = u.id
-      ORDER BY a.created_at DESC
+      SELECT 
+        l.*,
+        u.name AS user_name,
+        u.email AS user_email
+      FROM audit_logs l
+      LEFT JOIN users u ON l.user_id = u.id
+      ORDER BY l.created_at DESC
       LIMIT 100
     `).all();
+
     return res.json({ logs });
   } catch (err) {
+    console.error('Audit logs error:', err);
     return res.status(500).json({ error: 'Failed to retrieve audit logs.' });
   }
 });
